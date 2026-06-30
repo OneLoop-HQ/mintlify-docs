@@ -1,0 +1,452 @@
+---
+title: "Knowledge Base API: Create and Manage Document Stores"
+sidebarTitle: "Knowledge Base"
+description: "Create knowledge bases, configure embedding models and chunk sizes, list documents, and check ingestion status."
+---
+
+A **knowledge base** is a vector store of documents that agents can query during conversations using semantic search. Each knowledge base has its own embedding model, chunking configuration, and retrieval settings.
+
+---
+
+## Get Configuration Defaults
+
+```
+GET https://api-sandbox.featherhq.com/v1/knowledge-base/config
+```
+
+Returns the platform's available embedding models, supported chunk sizes, and workspace defaults. Always call this before creating a knowledge base if you want to select the best embedding model for your use case.
+
+### Response
+
+<ResponseField name="embedding_models" type="array">
+  List of available embedding models.
+
+  <Expandable title="embedding model fields">
+    <ResponseField name="id" type="string">
+      Model identifier to use in `embedding_model` (e.g. `"text-embedding-3-large"`).
+    </ResponseField>
+    <ResponseField name="display_name" type="string">
+      Human-readable model name.
+    </ResponseField>
+    <ResponseField name="max_dimensions" type="integer">
+      Maximum embedding dimensions supported.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Recommended use case description.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="chunk_sizes" type="array">
+  List of supported chunk token sizes (e.g. `[256, 512, 1024, 2048]`).
+</ResponseField>
+
+<ResponseField name="defaults" type="object">
+  Workspace default values for new knowledge bases.
+
+  <Expandable title="defaults fields">
+    <ResponseField name="embedding_model" type="string">Default embedding model ID.</ResponseField>
+    <ResponseField name="embedding_dimensions" type="integer">Default embedding dimensions.</ResponseField>
+    <ResponseField name="chunk_size" type="integer">Default chunk token size.</ResponseField>
+    <ResponseField name="chunk_overlap" type="integer">Default overlap between adjacent chunks.</ResponseField>
+    <ResponseField name="retrieval_top_k" type="integer">Default number of chunks to retrieve per query.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/knowledge-base/config \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## Create a Knowledge Base
+
+```
+POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases
+```
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Human-readable name for the knowledge base, unique within your workspace.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description for internal documentation.
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Arbitrary key-value pairs stored with the knowledge base.
+</ParamField>
+
+<ParamField body="embedding_model" type="string">
+  Embedding model ID. Must be one of the values from `GET /config`. Defaults to the workspace default.
+</ParamField>
+
+<ParamField body="embedding_dimensions" type="integer">
+  Number of embedding dimensions. Must be `≤ max_dimensions` for the selected model. Lower dimensions reduce storage cost; higher dimensions improve retrieval accuracy.
+</ParamField>
+
+<ParamField body="chunk_size" type="integer">
+  Maximum tokens per chunk when splitting documents. Must be in the supported `chunk_sizes` list. Defaults to workspace default (typically `512`).
+</ParamField>
+
+<ParamField body="chunk_overlap" type="integer">
+  Token overlap between adjacent chunks to preserve context at chunk boundaries. Defaults to workspace default (typically `64`).
+</ParamField>
+
+<ParamField body="retrieval_top_k" type="integer">
+  Number of chunks returned per semantic search query. Higher values improve recall at the cost of context window usage. Defaults to `5`.
+</ParamField>
+
+<ParamField body="pdf_extraction_effort" type="string">
+  Controls how aggressively PDFs are parsed. One of:
+  - `low` — Fast text extraction only.
+  - `medium` — Text + basic layout (default).
+  - `high` — Full OCR + table extraction (slower, more accurate for scanned PDFs).
+</ParamField>
+
+<ParamField body="default_sensitivity_level" type="string">
+  Default data sensitivity classification for documents in this knowledge base. One of `public`, `internal`, `confidential`, `restricted`. Used for access control enforcement.
+</ParamField>
+
+### Response
+
+Returns a **KnowledgeBaseResponse** object.
+
+<ResponseField name="id" type="string">
+  Unique knowledge base ID.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Knowledge base name.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Description.
+</ResponseField>
+
+<ResponseField name="embedding_model" type="string">
+  Embedding model in use.
+</ResponseField>
+
+<ResponseField name="embedding_dimensions" type="integer">
+  Configured embedding dimensions.
+</ResponseField>
+
+<ResponseField name="chunk_size" type="integer">
+  Chunk token size.
+</ResponseField>
+
+<ResponseField name="chunk_overlap" type="integer">
+  Chunk overlap tokens.
+</ResponseField>
+
+<ResponseField name="retrieval_top_k" type="integer">
+  Retrieval top-k setting.
+</ResponseField>
+
+<ResponseField name="document_count" type="integer">
+  Total number of documents currently in the knowledge base.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 last-update timestamp.
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Product Documentation",
+    "description": "Official product manuals and FAQs",
+    "embedding_model": "text-embedding-3-large",
+    "chunk_size": 512,
+    "chunk_overlap": 64,
+    "retrieval_top_k": 5,
+    "pdf_extraction_effort": "medium",
+    "default_sensitivity_level": "internal"
+  }'
+```
+
+```python Python
+import httpx
+
+resp = httpx.post(
+    "https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases",
+    headers={"x-api-key": "<key>"},
+    json={
+        "name": "Product Documentation",
+        "chunk_size": 512,
+        "retrieval_top_k": 5,
+    },
+)
+kb = resp.json()
+kb_id = kb["id"]
+```
+</CodeGroup>
+
+---
+
+## List Knowledge Bases
+
+```
+GET https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases
+```
+
+Returns a cursor-paginated list of knowledge bases in your workspace.
+
+<ParamField query="cursor" type="string">
+  Pagination cursor.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Results per page. Default `20`, max `100`.
+</ParamField>
+
+<ParamField query="q" type="string">
+  Search by name or description.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl "https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases?limit=20" \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## Get a Knowledge Base
+
+```
+GET https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/{id}
+```
+
+Returns the full **KnowledgeBaseResponse** including `document_count`, `embedding_model`, and all configuration fields.
+
+<ParamField path="id" type="string" required>
+  Knowledge base ID.
+</ParamField>
+
+---
+
+## Update a Knowledge Base
+
+```
+PUT https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/{id}
+```
+
+Updates metadata and retrieval settings. **Embedding model and chunk size cannot be changed after creation** — create a new knowledge base and re-ingest if you need different settings.
+
+<ParamField path="id" type="string" required>
+  Knowledge base ID.
+</ParamField>
+
+<ParamField body="name" type="string">
+  New name.
+</ParamField>
+
+<ParamField body="description" type="string">
+  New description.
+</ParamField>
+
+<ParamField body="retrieval_top_k" type="integer">
+  Updated top-k retrieval count.
+</ParamField>
+
+<ParamField body="default_sensitivity_level" type="string">
+  Updated default sensitivity classification.
+</ParamField>
+
+<Warning>
+  Changing `retrieval_top_k` affects all agents using this knowledge base immediately. Test the change on a test conversation before applying to production.
+</Warning>
+
+---
+
+## Delete a Knowledge Base
+
+```
+DELETE https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/{id}
+```
+
+Permanently deletes the knowledge base and all its documents and vectors.
+
+<Warning>
+  Deletion is irreversible. Detach the knowledge base from all agent revisions before deleting to avoid broken retrieval in active conversations.
+</Warning>
+
+---
+
+## Check Ingestion Status
+
+```
+GET https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/{id}/ingestion-status
+```
+
+Returns a summary count of document ingestion states across the entire knowledge base. Useful for health monitoring dashboards.
+
+<ParamField path="id" type="string" required>
+  Knowledge base ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="pending" type="integer">
+  Documents queued but not yet processing.
+</ResponseField>
+
+<ResponseField name="processing" type="integer">
+  Documents actively being chunked and embedded.
+</ResponseField>
+
+<ResponseField name="active" type="integer">
+  Documents successfully ingested and available for retrieval.
+</ResponseField>
+
+<ResponseField name="failed" type="integer">
+  Documents that failed ingestion. See ingestion job logs for details.
+</ResponseField>
+
+<ResponseField name="total" type="integer">
+  Total documents across all states.
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_abc123/ingestion-status \
+  -H "x-api-key: <key>"
+```
+
+```json Example response
+{
+  "pending": 0,
+  "processing": 3,
+  "active": 247,
+  "failed": 1,
+  "total": 251
+}
+```
+</CodeGroup>
+
+---
+
+## List Documents
+
+```
+GET https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/{id}/documents
+```
+
+Returns a cursor-paginated list of documents in the knowledge base.
+
+<ParamField path="id" type="string" required>
+  Knowledge base ID.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by ingestion status: `queued`, `processing`, `active`, `failed`.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Results per page. Default `20`, max `100`.
+</ParamField>
+
+### DocumentResponse Fields
+
+<ResponseField name="id" type="string">
+  Document ID.
+</ResponseField>
+
+<ResponseField name="knowledge_base_id" type="string">
+  Parent knowledge base ID.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  Document title.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Ingestion status: `queued`, `processing`, `active`, or `failed`.
+</ResponseField>
+
+<ResponseField name="chunk_count" type="integer">
+  Number of chunks generated from this document. `0` until `status` is `active`.
+</ResponseField>
+
+<ResponseField name="sensitivity_level" type="string">
+  Document sensitivity classification.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 upload timestamp.
+</ResponseField>
+
+---
+
+## Document Operations
+
+Individual documents can be retrieved, updated, or deleted independently.
+
+### Get a Document
+
+```
+GET https://api-sandbox.featherhq.com/v1/knowledge-base/documents/{id}
+```
+
+<ParamField path="id" type="string" required>
+  Document ID.
+</ParamField>
+
+### Update a Document
+
+```
+PATCH https://api-sandbox.featherhq.com/v1/knowledge-base/documents/{id}
+```
+
+Update document metadata without re-ingesting.
+
+<ParamField path="id" type="string" required>
+  Document ID.
+</ParamField>
+
+<ParamField body="title" type="string">
+  New document title.
+</ParamField>
+
+<ParamField body="sensitivity_level" type="string">
+  Updated sensitivity classification.
+</ParamField>
+
+### Delete a Document
+
+```
+DELETE https://api-sandbox.featherhq.com/v1/knowledge-base/documents/{id}
+```
+
+Removes the document and all its chunks from the knowledge base vector store.
+
+<CodeGroup>
+```bash cURL – Delete a document
+curl -X DELETE \
+  https://api-sandbox.featherhq.com/v1/knowledge-base/documents/doc_xyz789 \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+<Note>
+  Deleted documents are removed from the vector store immediately. Conversations in progress that retrieved content from the deleted document are not affected — only future queries will be impacted.
+</Note>

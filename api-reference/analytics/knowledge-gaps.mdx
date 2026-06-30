@@ -1,0 +1,285 @@
+---
+title: "Knowledge Gap Analytics: Find and Fix Content Holes"
+sidebarTitle: "Knowledge Gaps"
+description: "Discover questions your agents couldn't answer, manage gap clusters through a lifecycle, and see which documents are implicated in failures."
+---
+
+## Overview
+
+Knowledge gap analytics automatically cluster conversations where your agents failed to retrieve relevant content or gave low-confidence answers. Each cluster represents a recurring question or topic that your knowledge base doesn't cover adequately. You can track clusters through a lifecycle — from discovery to resolution — and assign owners to drive remediation.
+
+---
+
+## Summary
+
+```
+GET /v1/knowledge-gaps/summary
+```
+
+Returns headline KPIs for the current knowledge gap landscape.
+
+### Response
+
+<ResponseField name="total_sessions_analyzed" type="integer">
+  Number of sessions evaluated for knowledge gaps.
+</ResponseField>
+
+<ResponseField name="knowledge_gap_rate" type="number">
+  Fraction of sessions that contained at least one knowledge gap event.
+</ResponseField>
+
+<ResponseField name="total_gap_events" type="integer">
+  Total individual gap detection events across all sessions.
+</ResponseField>
+
+<ResponseField name="active_gap_clusters" type="integer">
+  Number of open gap clusters that have not been resolved, merged, or archived.
+</ResponseField>
+
+<ResponseField name="top_gap_types" type="array of objects">
+  Most common gap types: each entry has `gap_type` and `count`.
+</ResponseField>
+
+<ResponseField name="top_product_areas" type="array of objects">
+  Product areas with the most gaps: each entry has `product_area` and `count`.
+</ResponseField>
+
+<ResponseField name="average_impact_score" type="number">
+  Mean impact score across all active clusters.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/knowledge-gaps/summary \
+  -H "x-api-key: <key>"
+```
+
+```json Response
+{
+  "total_sessions_analyzed": 8240,
+  "knowledge_gap_rate": 0.073,
+  "total_gap_events": 603,
+  "active_gap_clusters": 38,
+  "top_gap_types": [
+    { "gap_type": "no_retrieval", "count": 310 },
+    { "gap_type": "low_confidence", "count": 185 }
+  ],
+  "top_product_areas": [
+    { "product_area": "billing", "count": 220 }
+  ],
+  "average_impact_score": 4.1
+}
+```
+</CodeGroup>
+
+---
+
+## List Gap Clusters
+
+```
+GET /v1/knowledge-gaps/clusters
+```
+
+Returns a paginated list of gap clusters.
+
+### Query Parameters
+
+<ParamField query="agent_id" type="string">
+  Filter to clusters surfaced by a specific agent.
+</ParamField>
+
+<ParamField query="gap_type" type="string">
+  Filter by gap type (e.g. `no_retrieval`, `low_confidence`, `contradictory_sources`).
+</ParamField>
+
+<ParamField query="product_area" type="string">
+  Filter to a specific product area.
+</ParamField>
+
+<ParamField query="priority" type="string">
+  Filter by cluster priority: `low`, `medium`, `high`, `critical`.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by lifecycle status. To show only open clusters, use `status=open`. See [Cluster Lifecycle](#cluster-lifecycle) for all values.
+</ParamField>
+
+<ParamField query="owner_user_id" type="string">
+  Filter to clusters assigned to a specific user.
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. One of:
+  - `impact_score:desc` (default)
+  - `last_seen_at:desc`
+  - `affected_sessions:desc`
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor.
+</ParamField>
+
+### Example: Only Open Clusters
+
+<CodeGroup>
+```bash cURL
+curl "https://api-sandbox.featherhq.com/v1/knowledge-gaps/clusters?status=open&sort=impact_score:desc" \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## Get a Gap Cluster
+
+```
+GET /v1/knowledge-gaps/clusters/{id}
+```
+
+Returns detailed information about a specific cluster, including its event timeseries, implicated knowledge claims, and representative questions from real conversations.
+
+### Response: ClusterDetailResponse
+
+<ResponseField name="id" type="string">
+  Cluster identifier.
+</ResponseField>
+
+<ResponseField name="gap_type" type="string">
+  Classification of the knowledge gap.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current lifecycle state (see [Cluster Lifecycle](#cluster-lifecycle)).
+</ResponseField>
+
+<ResponseField name="impact_score" type="number">
+  Composite score (0–10) weighing affected session count, recency, and gap type severity.
+</ResponseField>
+
+<ResponseField name="timeseries" type="array of objects">
+  Daily event counts showing when this cluster's gap events occurred.
+</ResponseField>
+
+<ResponseField name="claims" type="array of objects">
+  Knowledge claims (document excerpts) that may be missing or incorrect, derived from the gap events.
+</ResponseField>
+
+<ResponseField name="representative_questions" type="array of strings">
+  Verbatim or paraphrased questions from real sessions that triggered this cluster.
+</ResponseField>
+
+---
+
+## Document Health
+
+```
+GET /v1/knowledge-gaps/documents/health
+```
+
+Returns per-document retrieval and failure statistics — helping you identify which documents are associated with gap events.
+
+### Response fields per document
+
+<ResponseField name="document_id" type="string">
+  Document identifier.
+</ResponseField>
+
+<ResponseField name="document_title" type="string">
+  Document title.
+</ResponseField>
+
+<ResponseField name="retrieved_count" type="integer">
+  How many times this document was retrieved.
+</ResponseField>
+
+<ResponseField name="cited_count" type="integer">
+  How many times it was cited in an agent response.
+</ResponseField>
+
+<ResponseField name="gap_event_count" type="integer">
+  How many knowledge gap events are associated with this document.
+</ResponseField>
+
+---
+
+## Assign Cluster Owner
+
+```
+PATCH /v1/knowledge-gaps/clusters/{id}/owner
+```
+
+Assigns or changes the owner of a gap cluster.
+
+### Request Body
+
+<ParamField body="owner_user_id" type="string (uuid)" required>
+  The user to assign as owner.
+</ParamField>
+
+<ParamField body="note" type="string">
+  Optional note explaining the assignment.
+</ParamField>
+
+---
+
+## Update Cluster Status
+
+```
+POST /v1/knowledge-gaps/clusters/{id}/status
+```
+
+Transitions the cluster to a new lifecycle state.
+
+### Request Body
+
+<ParamField body="to_status" type="string" required>
+  Target state. See [Cluster Lifecycle](#cluster-lifecycle).
+</ParamField>
+
+<ParamField body="note" type="string">
+  Optional note to record with this status transition.
+</ParamField>
+
+---
+
+## Get Lifecycle Events
+
+```
+GET /v1/knowledge-gaps/clusters/{id}/events
+```
+
+Returns the full audit trail of status transitions and owner changes for a cluster.
+
+---
+
+## Cluster Lifecycle
+
+Gap clusters progress through the following states:
+
+| State | Meaning |
+|---|---|
+| `open` | Newly detected, no action taken |
+| `acknowledged` | A team member has reviewed the cluster |
+| `in_progress` | Content is being authored or updated to close the gap |
+| `fixed` | Knowledge base has been updated; cluster will be monitored |
+| `reopened` | Gap events resumed after a `fixed` state |
+| `merged` | Cluster was a duplicate and has been merged into another |
+| `archived` | Closed without a fix — low priority or won't address |
+
+<Tip>
+  Use `status=open` or `status=acknowledged,in_progress` in the list endpoint to build a knowledge gap triage queue for your content team.
+</Tip>
+
+---
+
+## Impact Score
+
+The `impact_score` is a composite value from 0–10 that combines:
+- **Affected sessions** — how many unique sessions triggered this cluster
+- **Recency** — how recently gap events were seen
+- **Gap type severity** — `no_retrieval` scores higher than `low_confidence`
+- **Product area weight** — configurable per product area (contact support to configure)
+
+Higher scores indicate clusters that most urgently need content remediation.

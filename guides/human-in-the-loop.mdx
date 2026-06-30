@@ -1,0 +1,279 @@
+---
+title: "Human-in-the-Loop: Approvals and Agent Handoffs"
+sidebarTitle: "Human-in-Loop"
+description: "Pause agent conversations for human approval, hand off to a live operator, and relay messages back to end users — using Feather's HITL API."
+---
+
+Not every decision should be left to an AI. Feather's Human-in-the-Loop (HITL) system lets you define exactly when a human needs to be in the conversation — whether that's approving a high-stakes action before the agent executes it, or handing the entire thread to a live support agent. Both modes keep the customer experience coherent: the user sees consistent messages and the operator has full context from the start.
+
+## Two HITL modes
+
+<CardGroup cols={2}>
+  <Card title="Approvals" icon="circle-check">
+    The agent pauses mid-conversation before executing a tool call or workflow action. A human operator reviews the pending action, then approves or denies it. The agent automatically resumes with the decision and continues the conversation.
+  </Card>
+  <Card title="Handoffs" icon="person-to-door">
+    The agent transfers the entire conversation to a human operator. The operator sends messages that are relayed directly to the end user. When the issue is resolved, the operator closes the handoff and the session ends gracefully.
+  </Card>
+</CardGroup>
+
+---
+
+## Handling approvals
+
+When a conversation reaches an action that requires sign-off, the agent enters `awaiting_approval` status and waits — it will not proceed until a decision is recorded.
+
+<Steps>
+  <Step title="List pending approval requests">
+    Poll this endpoint from your operator dashboard or webhook handler to surface requests that need attention.
+
+    <CodeGroup>
+    ```bash cURL
+    curl "https://api-sandbox.featherhq.com/v1/hitl/approvals?status=pending" \
+      -H "Authorization: Bearer <your_api_key>"
+    ```
+
+    ```python Python
+    import requests
+
+    response = requests.get(
+        "https://api-sandbox.featherhq.com/v1/hitl/approvals",
+        headers={"Authorization": "Bearer <your_api_key>"},
+        params={"status": "pending"}
+    )
+    print(response.json())
+    ```
+
+    ```typescript TypeScript
+    const response = await fetch(
+      "https://api-sandbox.featherhq.com/v1/hitl/approvals?status=pending",
+      { headers: { Authorization: "Bearer <your_api_key>" } }
+    );
+    const data = await response.json();
+    ```
+    </CodeGroup>
+
+    The response lists approval summaries including the `subject_ref`, `approver_role`, and the `suspend_message` shown to the user.
+  </Step>
+
+  <Step title="Fetch full approval detail">
+    Retrieve the complete record for a specific approval — including the action payload the agent wants to execute.
+
+    ```bash
+    curl "https://api-sandbox.featherhq.com/v1/hitl/approvals/<approval_id>" \
+      -H "Authorization: Bearer <your_api_key>"
+    ```
+
+    **ApprovalRequestDetail fields:**
+
+    | Field | Type | Description |
+    |---|---|---|
+    | `id` | string | Unique approval request ID |
+    | `conversation_id` | string | The conversation this approval belongs to |
+    | `subject_kind` | enum | `workflow_node` or `tool_call` |
+    | `subject_ref` | string | Identifier of the node or tool awaiting approval |
+    | `payload` | object | The full action payload the agent intends to execute |
+    | `approver_role` | string | The operator role required to approve this action |
+    | `suspend_message` | string | Message currently displayed to the end user |
+    | `timeout_at` | ISO 8601 | When the request auto-expires if no decision is made |
+  </Step>
+
+  <Step title="Submit your decision">
+    Approve or deny the pending action. Include a `note` when denying so the agent can explain the outcome to the user.
+
+    <CodeGroup>
+    ```bash Approve
+    curl -X POST \
+      "https://api-sandbox.featherhq.com/v1/hitl/approvals/<approval_id>/decide" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{"decision": "approve"}'
+    ```
+
+    ```bash Deny
+    curl -X POST \
+      "https://api-sandbox.featherhq.com/v1/hitl/approvals/<approval_id>/decide" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "decision": "deny",
+        "note": "This refund amount exceeds the policy limit. Escalate to manager."
+      }'
+    ```
+    </CodeGroup>
+
+    Once the decision is submitted, the conversation **automatically resumes**. If approved, the agent executes the action. If denied, the agent receives the denial note and responds to the user accordingly.
+  </Step>
+</Steps>
+
+---
+
+## Handling handoffs
+
+When an agent triggers a handoff, the conversation transitions to `waiting_for_human` status. The agent is no longer generating responses — a human operator takes over completely.
+
+<Steps>
+  <Step title="List pending handoffs">
+    <CodeGroup>
+    ```bash cURL
+    curl "https://api-sandbox.featherhq.com/v1/hitl/handoffs?status=requested" \
+      -H "Authorization: Bearer <your_api_key>"
+    ```
+
+    ```python Python
+    requests.get(
+        "https://api-sandbox.featherhq.com/v1/hitl/handoffs",
+        headers={"Authorization": "Bearer <your_api_key>"},
+        params={"status": "requested"}
+    )
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Review the handoff context">
+    Fetch the full handoff record to understand why the agent escalated and what the customer's situation is before you write your first message.
+
+    ```bash
+    curl "https://api-sandbox.featherhq.com/v1/hitl/handoffs/<handoff_id>" \
+      -H "Authorization: Bearer <your_api_key>"
+    ```
+
+    The `packet` field contains everything the agent prepared for the handoff:
+
+    ```json
+    {
+      "handoff_id": "hoff_01hxd4p6ns9qr7u1bgkm",
+      "conversation_id": "conv_01hxd3m5mr8qp6t0zdfh",
+      "status": "requested",
+      "packet": {
+        "static_text": "The customer is experiencing a billing discrepancy on their last invoice.",
+        "reason": "Issue requires access to billing backend — outside agent permissions.",
+        "summary": "Customer Alex reported a $50 overcharge on invoice #INV-2024-0891. They have already tried self-service and need manual correction.",
+        "transcript_ptr": "msg_01hxd3m5mr8qp6t0zabc"
+      }
+    }
+    ```
+
+    | Packet field | Description |
+    |---|---|
+    | `static_text` | A short briefing sentence visible at the top of the handoff card. |
+    | `reason` | Why the agent decided to escalate. |
+    | `summary` | A longer AI-generated summary of the conversation so far. |
+    | `transcript_ptr` | Message ID pointing to where in the transcript the handoff was triggered. |
+  </Step>
+
+  <Step title="Relay a message to the user">
+    Send messages as the human operator. They appear in the customer's conversation thread immediately.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST \
+      "https://api-sandbox.featherhq.com/v1/hitl/handoffs/<handoff_id>/messages" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "content": "Hi, I'\''m Sarah from support. I can see the billing issue on your account — let me get that corrected for you right now."
+      }'
+    ```
+
+    ```python Python
+    requests.post(
+        f"https://api-sandbox.featherhq.com/v1/hitl/handoffs/<handoff_id>/messages",
+        headers={"Authorization": "Bearer <your_api_key>"},
+        json={"content": "Hi, I'm Sarah from support. I can see the billing issue on your account — let me get that corrected for you right now."}
+    )
+    ```
+    </CodeGroup>
+
+    You can send as many messages as needed. The customer replies are visible by polling `GET /v1/v2/conversations/{id}/messages`.
+  </Step>
+
+  <Step title="Resolve the handoff">
+    When the issue is resolved, close the handoff. The conversation is marked `HANDOFF_RESOLVED` and the session ends.
+
+    ```bash
+    curl -X POST \
+      "https://api-sandbox.featherhq.com/v1/hitl/handoffs/<handoff_id>/resolve" \
+      -H "Authorization: Bearer <your_api_key>"
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Poll `GET /v1/v2/conversations/{id}/messages?since_seq={n}` to receive the end user's replies in real time during an active handoff. Pass the sequence number of the last message you've read as `since_seq` to receive only new messages.
+</Note>
+
+---
+
+## Custom approval messages
+
+While a conversation is paused waiting for approval, the end user sees a holding message. You can customize both the initial holding message and the follow-up patience message to match your brand voice.
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api-sandbox.featherhq.com/v1/hitl/approval-messages \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "holding_line": "Let me connect you with a specialist. One moment please.",
+    "waiting_reply": "I'\''m still working on connecting you. Thank you for your patience."
+  }'
+```
+
+```python Python
+requests.put(
+    "https://api-sandbox.featherhq.com/v1/hitl/approval-messages",
+    headers={"Authorization": "Bearer <your_api_key>"},
+    json={
+        "holding_line": "Let me connect you with a specialist. One moment please.",
+        "waiting_reply": "I'm still working on connecting you. Thank you for your patience."
+    }
+)
+```
+</CodeGroup>
+
+| Field | When it's shown |
+|---|---|
+| `holding_line` | Sent to the user immediately when the conversation enters `awaiting_approval`. |
+| `waiting_reply` | Sent if the user sends another message while still waiting (the "still here" acknowledgement). |
+
+---
+
+## Configuring HITL in workflows
+
+Approval and handoff behaviors are configured as nodes in your agent's workflow graph. Here's how both node types look in a workflow definition:
+
+<CodeGroup>
+```json Approval Node
+{
+  "id": "approve_refund",
+  "kind": "approval",
+  "config": {
+    "subject_ref": "process_refund",
+    "approver_role": "billing_manager",
+    "suspend_message": "I'm reviewing your refund request with our billing team. This usually takes just a moment.",
+    "timeout_seconds": 300
+  },
+  "edges": {
+    "approved": "process_refund",
+    "denied": "explain_denial",
+    "timeout": "escalate_to_email"
+  }
+}
+```
+
+```json Handoff Node
+{
+  "id": "handoff_to_support",
+  "kind": "handoff",
+  "config": {
+    "static_text": "Transferring to a live support agent.",
+    "reason_template": "Customer issue requires manual intervention: {{last_user_message}}",
+    "include_summary": true,
+    "target_role": "support_agent"
+  }
+}
+```
+</CodeGroup>
+
+The `edges` on an Approval Node let you route the conversation differently based on whether the action was approved, denied, or timed out — giving you full control over each outcome path.

@@ -1,0 +1,153 @@
+---
+title: "Agents: The Core AI Units of Feather"
+sidebarTitle: "Agents"
+description: "Agents are the AI actors in Feather. Each agent has a system prompt, knowledge bases, tools, and policies — all versioned through revisions."
+---
+
+Agents are the primary AI actors in the Feather platform. Each agent represents an AI assistant with a defined persona, a system prompt, and a set of capabilities — including knowledge bases, tools, and policies. Every interaction your end users have with Feather flows through an agent.
+
+## What Is an Agent?
+
+An agent combines identity with capability. At its core, an agent carries:
+
+- **A persona** — a human-readable name and description that surfaces in logs, dashboards, and handoff messages.
+- **A system prompt** — instructions that shape the agent's tone, role, and behavior during a conversation.
+- **Knowledge bases** — indexed document collections the agent retrieves from at runtime.
+- **Tools** — external API calls or platform capabilities the agent can invoke.
+- **Policies** — guardrails that run at defined enforcement points to control what the agent says and does.
+
+Because agents live in production environments alongside real user data, Feather enforces an immutable revision model to keep changes auditable and rollbacks safe.
+
+---
+
+## The Revision Model
+
+Every agent has two layers of identity:
+
+| Layer | Mutability | Purpose |
+|---|---|---|
+| **Agent record** | Mutable | Stores name, description, and a pointer to the active revision |
+| **Revision** | Immutable once published | Stores system prompt, KB refs, tool refs, policy refs, and model settings |
+
+When you first create an agent, Feather creates a draft revision automatically. You iterate on that draft until you're ready to publish. Once you call `POST /v1/agents/revisions/{revision_id}/publish`, the revision is frozen — its `system_prompt`, `knowledge_base_refs`, `tool_refs`, and `policy_refs` can no longer be changed. To update agent behavior, you create a new draft revision and publish that instead.
+
+<Note>
+  The agent's `active_revision_id` field always points to the currently published revision. Any conversation started after a new revision is published will use the new behavior — existing conversations remain pinned to the revision that was active when they were created.
+</Note>
+
+### Revision lifecycle
+
+<Steps>
+  <Step title="Create a draft revision">
+    Call `POST /v1/agents/{agent_id}/revisions` to create a new draft. The revision starts in `draft` status.
+  </Step>
+  <Step title="Configure the revision">
+    Set the `system_prompt`, attach `knowledge_base_refs`, `tool_refs`, `policy_refs`, and `model_settings` on the draft. All fields remain editable at this stage.
+  </Step>
+  <Step title="Publish the revision">
+    Call `POST /v1/agents/revisions/{revision_id}/publish`. The revision status moves to `published` and becomes immutable. Feather updates the agent's `active_revision_id` automatically.
+  </Step>
+  <Step title="Create another draft when needed">
+    When you need to update behavior, repeat the process. Previous revisions remain available for rollback or audit.
+  </Step>
+</Steps>
+
+---
+
+## Key Fields
+
+<AccordionGroup>
+  <Accordion title="Agent-level fields">
+    | Field | Type | Description |
+    |---|---|---|
+    | `name` | string | Display name for the agent (e.g. `"Support Bot"`) |
+    | `description` | string | Internal description of the agent's purpose |
+    | `active_revision_id` | string | Points to the currently published revision |
+    | `team_id` | string | Optional — the team this agent belongs to |
+  </Accordion>
+  <Accordion title="Revision-level fields">
+    | Field | Type | Description |
+    |---|---|---|
+    | `system_prompt` | string | Core instruction set for the agent's LLM |
+    | `knowledge_base_refs` | array | IDs of knowledge bases the agent searches at runtime |
+    | `tool_refs` | array | IDs of tools the agent may call |
+    | `policy_refs` | array | IDs of policies enforced on this revision |
+    | `model_settings` | object | LLM provider, model name, temperature, max tokens |
+    | `channel_specific_config` | object | Per-channel overrides (e.g. shorter responses on SMS) |
+  </Accordion>
+</AccordionGroup>
+
+### `channel_specific_config`
+
+Some behaviors need to differ by channel. For example, you might want a more concise response format for SMS than for API or email. The `channel_specific_config` field accepts a map keyed by channel type (`api`, `sms`, `voice`, `email`), letting you override `system_prompt` additions, response length hints, or enabled tool sets per channel without creating a separate agent.
+
+<Tip>
+  Use `channel_specific_config` to add a channel-specific instruction addendum rather than duplicating entire system prompts. For example, append `"Keep all responses under 160 characters."` for the `sms` channel only.
+</Tip>
+
+---
+
+## Platform Tools
+
+Beyond the custom tools you attach via `tool_refs`, Feather provides a set of **platform tools** — built-in capabilities available to every agent with no additional configuration. Platform tools appear in the agent's tool list at runtime and can be invoked like any other tool.
+
+<CardGroup cols={2}>
+  <Card title="transfer_call" icon="phone-arrow-right">
+    Transfers the current conversation to another agent or a human queue. Accepts a target agent ID or queue ID and an optional handoff message.
+  </Card>
+  <Card title="end_session" icon="circle-stop">
+    Gracefully closes the conversation, sets status to `closed`, and emits a configurable farewell message to the end user.
+  </Card>
+  <Card title="send_message" icon="message">
+    Sends a proactive message to the end user mid-turn, useful for streaming updates during long-running tool calls.
+  </Card>
+  <Card title="request_approval" icon="user-check">
+    Pauses the conversation and creates an approval request, surfacing it to a human reviewer before proceeding.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Platform tools count against your per-turn tool call limits. If your agent makes heavy use of custom tools, be mindful of combining them with frequent platform tool calls in the same turn.
+</Warning>
+
+---
+
+## How Agents Map to Conversations
+
+When you create a conversation (via `POST /v1/conversations`), you specify an `agent_id`. Feather resolves the agent's `active_revision_id` at that moment and **pins it** to the conversation. This means:
+
+- Subsequent changes to the agent or its revisions do not affect the in-flight conversation.
+- Every turn in the conversation runs against the same frozen revision.
+- You can inspect `pinned_revision_id` on the conversation object to see exactly which revision is active.
+
+This pinning behavior is what makes Feather safe for long-running sessions like multi-day email threads or complex support escalations.
+
+---
+
+## Teams
+
+You can group multiple agents into a **team** to enable multi-agent routing. A team defines a routing strategy and a set of member agents. Feather supports two routing modes:
+
+<CardGroup cols={2}>
+  <Card title="Supervisor routing" icon="sitemap">
+    A designated supervisor agent evaluates each incoming turn and delegates to the most appropriate member agent. Ideal when you have specialized agents (billing, technical, general) and want intelligent routing.
+  </Card>
+  <Card title="Swarm routing" icon="arrows-spin">
+    All member agents are eligible to respond, and Feather selects the agent best suited to the current turn based on capability matching. Useful for load distribution across agents with similar roles.
+  </Card>
+</CardGroup>
+
+Teams are configured separately and referenced by `team_id` on the agent record. A conversation can be assigned to a team rather than a specific agent — Feather handles routing internally and updates `assigned_agent_id` on the conversation object as routing decisions are made.
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build Your First Agent" icon="rocket" href="/guides/build-your-first-agent">
+    A step-by-step guide to creating an agent, configuring a revision, and running your first conversation.
+  </Card>
+  <Card title="Agents API Reference" icon="code" href="/api-reference/agents/overview">
+    Full reference for agent and revision endpoints, including request schemas and response examples.
+  </Card>
+</CardGroup>

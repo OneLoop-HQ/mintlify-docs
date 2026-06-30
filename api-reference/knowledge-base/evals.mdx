@@ -1,0 +1,457 @@
+---
+title: "Knowledge Base Eval Suites: Test Retrieval Quality"
+sidebarTitle: "KB Evals"
+description: "Create evaluation suites with question-answer cases, run them against knowledge bases, and inspect per-case retrieved chunks and judge scores."
+---
+
+## Overview
+
+KB Eval Suites let you systematically test whether your knowledge bases return accurate, relevant content. You define question-and-answer cases, run them against one or more KBs, and receive per-case scores from an LLM judge. Use evals to catch regressions before deploying KB changes.
+
+**Base URL:** `https://api-sandbox.featherhq.com`
+
+---
+
+## Eval Suites
+
+### Create a Suite
+
+```
+POST /v1/knowledge-base/evals/suites
+```
+
+<ParamField body="name" type="string" required>
+  A human-readable name for the suite, e.g. `"Refund Policy – v2 Regression"`.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description of what the suite tests.
+</ParamField>
+
+<ParamField body="pass_threshold" type="number" default="70">
+  The minimum average answer score (0–100) required for a run to be considered passing. Defaults to `70`.
+</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string">
+  Suite identifier.
+</ResponseField>
+<ResponseField name="name" type="string">
+  Suite name.
+</ResponseField>
+<ResponseField name="description" type="string">
+  Suite description.
+</ResponseField>
+<ResponseField name="pass_threshold" type="number">
+  Passing score threshold.
+</ResponseField>
+<ResponseField name="case_count" type="integer">
+  Number of cases in the suite.
+</ResponseField>
+<ResponseField name="created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+---
+
+### List Suites
+
+```
+GET /v1/knowledge-base/evals/suites
+```
+
+Returns a cursor-paginated list of all eval suites for the organisation.
+
+---
+
+### Get a Suite
+
+```
+GET /v1/knowledge-base/evals/suites/{id}
+```
+
+Returns the suite, including all its cases.
+
+---
+
+### Update a Suite
+
+```
+PATCH /v1/knowledge-base/evals/suites/{id}
+```
+
+<ParamField body="name" type="string">
+  New suite name.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated description.
+</ParamField>
+
+<ParamField body="pass_threshold" type="number">
+  Updated pass threshold (0–100).
+</ParamField>
+
+---
+
+### Delete a Suite
+
+```
+DELETE /v1/knowledge-base/evals/suites/{id}
+```
+
+Deletes the suite, all its cases, and all associated run history.
+
+<Warning>
+  This operation is irreversible. Historical run results are permanently deleted.
+</Warning>
+
+---
+
+## Cases
+
+Each case is a single question-answer pair that the evaluator tests during a run.
+
+### Create a Case
+
+```
+POST /v1/knowledge-base/evals/suites/{suite_id}/cases
+```
+
+<ParamField path="suite_id" type="string" required>
+  The suite to add this case to.
+</ParamField>
+
+<ParamField body="question" type="string" required>
+  The test question to ask the knowledge base.
+</ParamField>
+
+<ParamField body="expected_answer" type="string" required>
+  The ground-truth answer. The LLM judge compares the generated answer against this.
+</ParamField>
+
+<ParamField body="success_criteria" type="string[]">
+  Optional list of specific criteria that the generated answer must satisfy. The judge evaluates each criterion independently.
+
+  ```json
+  [
+    "States the 14-day refund window",
+    "Mentions the download exception",
+    "Does not reference subscription pricing"
+  ]
+  ```
+</ParamField>
+
+---
+
+### Update a Case
+
+```
+PATCH /v1/knowledge-base/evals/cases/{id}
+```
+
+<ParamField body="question" type="string">
+  Updated question text.
+</ParamField>
+
+<ParamField body="expected_answer" type="string">
+  Updated ground-truth answer.
+</ParamField>
+
+<ParamField body="success_criteria" type="string[]">
+  Replacement criteria list.
+</ParamField>
+
+---
+
+### Delete a Case
+
+```
+DELETE /v1/knowledge-base/evals/cases/{id}
+```
+
+---
+
+## Runs
+
+A **run** executes all cases in a suite against one or more knowledge bases and produces scored results.
+
+### Start a Run
+
+```
+POST /v1/knowledge-base/evals/suites/{suite_id}/runs
+```
+
+<ParamField path="suite_id" type="string" required>
+  The suite to run.
+</ParamField>
+
+<ParamField body="kb_ids" type="string[]" required>
+  One or more knowledge base IDs to evaluate. Each KB is tested independently against all cases.
+</ParamField>
+
+<ParamField body="prefer_draft" type="boolean" default="false">
+  Prefer draft document versions when retrieving chunks.
+</ParamField>
+
+<ParamField body="version_overrides" type="object">
+  Map of `document_id → version_id` to pin specific document versions for this run.
+</ParamField>
+
+<ParamField body="generator_model_override" type="string">
+  Override the LLM used to generate answers for this run. Defaults to the KB's configured model.
+</ParamField>
+
+<ParamField body="judge_model_override" type="string">
+  Override the LLM used as the judge for scoring. Defaults to the org's configured judge model.
+</ParamField>
+
+#### Response
+
+<ResponseField name="run_id" type="string">
+  ID of the created run.
+</ResponseField>
+<ResponseField name="status" type="string">
+  `queued`, `running`, `completed`, or `failed`.
+</ResponseField>
+<ResponseField name="suite_id" type="string">
+  The suite being evaluated.
+</ResponseField>
+<ResponseField name="kb_ids" type="string[]">
+  The KBs being tested.
+</ResponseField>
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp.
+</ResponseField>
+
+---
+
+### List Runs for a Suite
+
+```
+GET /v1/knowledge-base/evals/suites/{suite_id}/runs
+```
+
+Returns all runs for a specific suite, newest first.
+
+---
+
+### List All Runs (Org-Level)
+
+```
+GET /v1/knowledge-base/evals/runs
+```
+
+Returns all runs across all suites for the organisation. Useful for a global eval dashboard.
+
+---
+
+### Get a Run
+
+```
+GET /v1/knowledge-base/evals/runs/{id}
+```
+
+<ResponseField name="run_id" type="string">
+  Run identifier.
+</ResponseField>
+<ResponseField name="status" type="string">
+  Current run status.
+</ResponseField>
+<ResponseField name="pass_threshold" type="number">
+  The threshold at the time the run was created.
+</ResponseField>
+<ResponseField name="average_score" type="number">
+  Mean `answer_score` across all cases. `null` if the run hasn't completed.
+</ResponseField>
+<ResponseField name="passed" type="boolean">
+  Whether `average_score` meets `pass_threshold`. `null` until complete.
+</ResponseField>
+<ResponseField name="total_cases" type="integer">
+  Total number of cases in the run.
+</ResponseField>
+<ResponseField name="completed_cases" type="integer">
+  Number of cases that have been evaluated so far.
+</ResponseField>
+
+---
+
+### Get Run Results
+
+```
+GET /v1/knowledge-base/evals/runs/{id}/results
+```
+
+Returns the per-case results for a run, cursor-paginated.
+
+#### Query Parameters
+
+<ParamField query="cursor" type="string">
+  Cursor for the next page of results.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+  Results per page. Max `100`.
+</ParamField>
+
+<ParamField query="passed" type="boolean">
+  Filter to only passing (`true`) or failing (`false`) cases.
+</ParamField>
+
+#### Response — `KBEvalCaseResultResponse`
+
+<ResponseField name="case_result_id" type="string">
+  Unique ID for this case result.
+</ResponseField>
+
+<ResponseField name="question_snapshot" type="string">
+  The question as it was at the time the run was created (immutable snapshot).
+</ResponseField>
+
+<ResponseField name="expected_answer_snapshot" type="string">
+  The expected answer at the time of the run.
+</ResponseField>
+
+<ResponseField name="retrieved_chunks" type="object[]">
+  The chunks returned from the KB for this question during the run.
+
+  <Expandable title="retrieved chunk fields">
+    <ResponseField name="chunk_id" type="string">
+      Chunk identifier.
+    </ResponseField>
+    <ResponseField name="document_title" type="string">
+      Title of the source document.
+    </ResponseField>
+    <ResponseField name="content" type="string">
+      Chunk text content.
+    </ResponseField>
+    <ResponseField name="score" type="number">
+      Retrieval relevance score.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="generated_answer" type="string">
+  The answer produced by the generator model from the retrieved chunks.
+</ResponseField>
+
+<ResponseField name="answer_score" type="number">
+  Judge's overall score for this case, 0–100.
+</ResponseField>
+
+<ResponseField name="passed" type="boolean">
+  Whether this case's `answer_score` meets the suite's `pass_threshold`.
+</ResponseField>
+
+<ResponseField name="judge_reasoning" type="string">
+  The judge model's explanation for the score it assigned.
+</ResponseField>
+
+<ResponseField name="criteria_results" type="object[]">
+  Per-criterion evaluation when `success_criteria` was provided.
+
+  <Expandable title="criteria result fields">
+    <ResponseField name="criterion" type="string">
+      The criterion text.
+    </ResponseField>
+    <ResponseField name="met" type="boolean">
+      Whether the generated answer satisfied this criterion.
+    </ResponseField>
+    <ResponseField name="reasoning" type="string">
+      Judge's reasoning for the criterion verdict.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```bash Create a suite
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/evals/suites \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Refund Policy – v2 Regression",
+    "description": "Tests that refund policy questions are answered correctly after the September update.",
+    "pass_threshold": 75
+  }'
+```
+
+```bash Add a case
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/evals/suites/suite_4b1c2d3e/cases \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What is the refund window for digital purchases?",
+    "expected_answer": "Digital purchases can be refunded within 14 days, provided the content has not been downloaded or streamed.",
+    "success_criteria": [
+      "States the 14-day refund window",
+      "Mentions the download/stream exception"
+    ]
+  }'
+```
+
+```bash Start a run
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/evals/suites/suite_4b1c2d3e/runs \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "kb_ids": ["kb_01hx3rp2v9abcdef"],
+    "prefer_draft": false
+  }'
+```
+
+```bash Get run results
+curl "https://api-sandbox.featherhq.com/v1/knowledge-base/evals/runs/run_9a7b5c3d/results?limit=10" \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+</CodeGroup>
+
+### Run Results Response
+
+```json
+{
+  "items": [
+    {
+      "case_result_id": "cres_1f2e3d4c",
+      "question_snapshot": "What is the refund window for digital purchases?",
+      "expected_answer_snapshot": "Digital purchases can be refunded within 14 days, provided the content has not been downloaded or streamed.",
+      "retrieved_chunks": [
+        {
+          "chunk_id": "chk_9f2a1b3c",
+          "document_title": "Customer Refund Policy",
+          "content": "Digital purchases are eligible for a full refund within 14 days of the transaction date, provided the content has not been downloaded or streamed...",
+          "score": 0.921
+        }
+      ],
+      "generated_answer": "You can request a refund for digital purchases within 14 days of purchase, as long as you have not downloaded or streamed the content.",
+      "answer_score": 92,
+      "passed": true,
+      "judge_reasoning": "The generated answer correctly states the 14-day window and includes the download/stream exception. Minor phrasing difference from expected answer but semantically equivalent.",
+      "criteria_results": [
+        {
+          "criterion": "States the 14-day refund window",
+          "met": true,
+          "reasoning": "Answer explicitly mentions '14 days of purchase'."
+        },
+        {
+          "criterion": "Mentions the download/stream exception",
+          "met": true,
+          "reasoning": "Answer says 'as long as you have not downloaded or streamed the content'."
+        }
+      ]
+    }
+  ],
+  "next_cursor": null,
+  "total": 1
+}
+```
+
+<Tip>
+  Use `criteria_results` to pinpoint exactly which aspect of an answer is failing, rather than debugging the overall score alone.
+</Tip>

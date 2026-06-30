@@ -1,0 +1,356 @@
+---
+title: "KB Connectors: Sync from Notion, Google Drive, and S3"
+sidebarTitle: "Connectors"
+description: "Attach Notion, Google Drive, or S3 connector sources to a knowledge base and configure automatic sync schedules."
+---
+
+## Overview
+
+KB Connectors let you attach external data providers to a knowledge base so Feather can continuously ingest and index your content. Once a connector source is attached and roots are configured, documents are synced automatically on your chosen schedule.
+
+**Supported providers:** `notion` · `google_drive` · `s3` · `url`
+
+**Base URL:** `https://api-sandbox.featherhq.com`
+
+---
+
+## Sources
+
+A **source** represents a connected provider attached to a specific knowledge base.
+
+### Create a Source
+
+```
+POST /v1/knowledge-base/knowledge-bases/{kb_id}/sources
+```
+
+<ParamField path="kb_id" type="string" required>
+  The knowledge base to attach the source to.
+</ParamField>
+
+<ParamField body="provider" type="string" required>
+  The data provider. One of `notion`, `google_drive`, `s3`, or `url`.
+</ParamField>
+
+<ParamField body="integration_connection_id" type="string" required>
+  The ID of an active integration connection for this provider. Not required for `url` sources.
+</ParamField>
+
+<ParamField body="config" type="object">
+  Provider-specific configuration options.
+
+  <Expandable title="config fields (provider-specific)">
+    <ParamField body="config.region" type="string">
+      **(S3 only)** AWS region of the bucket, e.g. `us-east-1`.
+    </ParamField>
+    <ParamField body="config.bucket" type="string">
+      **(S3 only)** Name of the S3 bucket to sync from.
+    </ParamField>
+    <ParamField body="config.crawl_depth" type="integer">
+      **(URL only)** Maximum link depth to follow from each root URL. Default `1` (root page only).
+    </ParamField>
+    <ParamField body="config.include_pattern" type="string">
+      **(URL only)** Regex pattern — only URLs matching this pattern are crawled.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response — `SourceResponse`
+
+<ResponseField name="id" type="string">
+  Unique source identifier.
+</ResponseField>
+<ResponseField name="kb_id" type="string">
+  The knowledge base this source is attached to.
+</ResponseField>
+<ResponseField name="provider" type="string">
+  The connected provider: `notion`, `google_drive`, `s3`, or `url`.
+</ResponseField>
+<ResponseField name="status" type="string">
+  Current source status: `active`, `error`, `syncing`, or `pending`.
+</ResponseField>
+<ResponseField name="auto_sync_enabled" type="boolean">
+  Whether scheduled automatic sync is turned on.
+</ResponseField>
+<ResponseField name="sync_interval_seconds" type="integer">
+  How often the source syncs, in seconds.
+</ResponseField>
+<ResponseField name="next_sync_at" type="string">
+  ISO 8601 timestamp of the next scheduled sync. `null` when `auto_sync_enabled` is `false`.
+</ResponseField>
+
+---
+
+### List Sources
+
+```
+GET /v1/knowledge-base/knowledge-bases/{kb_id}/sources
+```
+
+Returns a paginated list of all sources attached to the knowledge base.
+
+---
+
+### Get a Source
+
+```
+GET /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}
+```
+
+Returns a single `SourceResponse` by ID.
+
+---
+
+### Delete a Source
+
+```
+DELETE /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}
+```
+
+Detaches the source and stops all future syncs. Documents already indexed from this source are **not** automatically removed.
+
+<Warning>
+  Deleting a source does not delete the indexed documents. Remove them separately from the documents API if you need to purge content.
+</Warning>
+
+---
+
+## Roots
+
+**Roots** define which specific pages, folders, or paths within a connected provider should be synced. A source without any roots will not ingest any content.
+
+### Add a Root
+
+```
+POST /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}/roots
+```
+
+<ParamField body="provider_item_id" type="string">
+  **(Notion)** The Notion page or database ID to sync from.
+</ParamField>
+
+<ParamField body="url" type="string">
+  **(URL sources)** The root URL to start crawling from.
+</ParamField>
+
+<ParamField body="s3_path" type="string">
+  **(S3)** Key prefix within the bucket, e.g. `docs/` or `knowledge/2024/`. Use `/` for the entire bucket.
+</ParamField>
+
+<ParamField body="google_drive_item_id" type="string">
+  **(Google Drive)** The Drive file or folder ID to sync from. Obtain this via the Picker config endpoint (see below).
+</ParamField>
+
+---
+
+### List Roots
+
+```
+GET /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}/roots
+```
+
+---
+
+### Delete a Root
+
+```
+DELETE /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}/roots/{root_id}
+```
+
+---
+
+## Sync
+
+### Trigger a Manual Sync
+
+```
+POST /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}/sync
+```
+
+Kicks off an immediate sync regardless of the schedule. Returns `202 Accepted` with a `sync_job_id`.
+
+<Note>
+  Only one sync job can run per source at a time. If a sync is already in progress, this endpoint returns `409 Conflict`.
+</Note>
+
+### Get Sync Status
+
+```
+GET /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}/sync/status
+```
+
+<ResponseField name="sync_job_id" type="string">
+  ID of the most recent sync job.
+</ResponseField>
+<ResponseField name="status" type="string">
+  `pending`, `running`, `completed`, or `failed`.
+</ResponseField>
+<ResponseField name="started_at" type="string">
+  ISO 8601 timestamp when the sync started.
+</ResponseField>
+<ResponseField name="completed_at" type="string">
+  ISO 8601 timestamp when the sync finished. `null` if still running.
+</ResponseField>
+<ResponseField name="documents_added" type="integer">
+  Number of new documents ingested during this sync.
+</ResponseField>
+<ResponseField name="documents_updated" type="integer">
+  Number of existing documents updated.
+</ResponseField>
+<ResponseField name="documents_removed" type="integer">
+  Number of documents removed because they no longer exist in the source.
+</ResponseField>
+<ResponseField name="error_message" type="string">
+  Human-readable error description if `status` is `failed`.
+</ResponseField>
+
+---
+
+## Schedule
+
+### Update Sync Schedule
+
+```
+PATCH /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}/schedule
+```
+
+<ParamField body="auto_sync_enabled" type="boolean">
+  Enable or disable automatic scheduled syncing.
+</ParamField>
+
+<ParamField body="sync_interval_seconds" type="integer">
+  Sync frequency in seconds. Minimum: `3600` (1 hour). Recommended: `86400` (daily).
+</ParamField>
+
+<Tip>
+  For Notion and Google Drive sources that change frequently, set `sync_interval_seconds: 3600`. For S3 archives that rarely change, `86400` or longer reduces unnecessary API calls.
+</Tip>
+
+---
+
+## Notion: Browse Pages
+
+Use the page browser to explore the Notion workspace before choosing roots.
+
+```
+GET /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}/pages
+```
+
+Returns a list of accessible Notion pages and databases under the connected workspace.
+
+<ResponseField name="items" type="object[]">
+  List of Notion items.
+
+  <Expandable title="item fields">
+    <ResponseField name="id" type="string">
+      Notion page or database ID. Use as `provider_item_id` when adding a root.
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Page or database title.
+    </ResponseField>
+    <ResponseField name="type" type="string">
+      `page` or `database`.
+    </ResponseField>
+    <ResponseField name="parent_id" type="string">
+      Parent page ID, or `null` for top-level items.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Google Drive: Picker Config
+
+Fetch the configuration needed to open the Google Drive file picker in your UI.
+
+```
+GET /v1/knowledge-base/knowledge-bases/{kb_id}/sources/{source_id}/drive/picker-config
+```
+
+<ResponseField name="access_token" type="string">
+  Short-lived OAuth access token scoped for the picker.
+</ResponseField>
+<ResponseField name="app_id" type="string">
+  Google app ID for the picker.
+</ResponseField>
+<ResponseField name="developer_key" type="string">
+  Google API key for the picker.
+</ResponseField>
+<ResponseField name="expires_at" type="string">
+  ISO 8601 expiry of the `access_token`.
+</ResponseField>
+
+<Note>
+  The picker config token expires in 60 minutes. Request a fresh one each time you open the picker UI.
+</Note>
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```bash Create a Notion source
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx3rp2v9abcdef/sources \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "notion",
+    "integration_connection_id": "conn_notion_abc123"
+  }'
+```
+
+```bash Add a root page
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx3rp2v9abcdef/sources/src_7f3e9b1d/roots \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider_item_id": "1a2b3c4d-5e6f-7890-abcd-ef1234567890"
+  }'
+```
+
+```bash Trigger manual sync
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx3rp2v9abcdef/sources/src_7f3e9b1d/sync \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+```bash Update schedule
+curl -X PATCH https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx3rp2v9abcdef/sources/src_7f3e9b1d/schedule \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "auto_sync_enabled": true,
+    "sync_interval_seconds": 86400
+  }'
+```
+
+</CodeGroup>
+
+### Create Source Response
+
+```json
+{
+  "id": "src_7f3e9b1d",
+  "kb_id": "kb_01hx3rp2v9abcdef",
+  "provider": "notion",
+  "status": "active",
+  "auto_sync_enabled": false,
+  "sync_interval_seconds": null,
+  "next_sync_at": null
+}
+```
+
+### Sync Status Response
+
+```json
+{
+  "sync_job_id": "job_4c8a1e2f",
+  "status": "completed",
+  "started_at": "2024-06-01T10:00:00Z",
+  "completed_at": "2024-06-01T10:02:34Z",
+  "documents_added": 12,
+  "documents_updated": 3,
+  "documents_removed": 1,
+  "error_message": null
+}
+```

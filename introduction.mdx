@@ -1,0 +1,76 @@
+---
+title: "Feather CX Platform: AI-Powered Customer Experience API"
+sidebarTitle: "Introduction"
+description: "Feather is a unified customer experience platform. Build AI agents, ingest knowledge, run conversations across voice, SMS, and email — all through one API."
+---
+
+Feather gives you a complete API to build and deploy AI-powered customer experience workflows. Create intelligent agents backed by your knowledge base, run conversations across every channel, and continuously evaluate and improve performance — all from a single, unified platform.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Make your first API call and run your first conversation in under 5 minutes.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Learn how to create API keys and authenticate every request.
+  </Card>
+  <Card title="Build an Agent" icon="robot" href="/guides/build-your-first-agent">
+    Create your first AI agent with a knowledge base and custom tools.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/identity/whoami">
+    Explore all endpoints, parameters, and response shapes.
+  </Card>
+</CardGroup>
+
+## What you can build
+
+Feather's platform API covers the full stack of customer experience automation:
+
+<CardGroup cols={3}>
+  <Card title="AI Agents" icon="brain" href="/concepts/agents">
+    Create versioned agents with system prompts, knowledge bases, tools, and policies.
+  </Card>
+  <Card title="Knowledge Bases" icon="database" href="/concepts/knowledge-bases">
+    Ingest documents from files, URLs, Notion, Google Drive, and S3 — then search semantically.
+  </Card>
+  <Card title="Multi-Channel" icon="comments" href="/concepts/conversations">
+    Handle conversations over voice, SMS, email, and API in a unified session model.
+  </Card>
+  <Card title="Voice Calls" icon="phone" href="/guides/voice-calls">
+    Build outbound and inbound voice agents with STT/TTS, warm transfers, and voicemail detection.
+  </Card>
+  <Card title="Integrations" icon="plug" href="/guides/connect-an-integration">
+    Connect Slack, Notion, Twilio, and custom MCP servers to give agents real-world tools.
+  </Card>
+  <Card title="Evaluations" icon="chart-bar" href="/guides/evaluations">
+    Run simulation suites and model-judge evaluators to measure and improve agent quality.
+  </Card>
+</CardGroup>
+
+## How it works
+
+<Steps>
+  <Step title="Authenticate">
+    Create an API key in your organization settings. Include it as `x-api-key: <key>` on every request.
+  </Step>
+  <Step title="Create an agent">
+    `POST /v1/agents` with a name and system prompt. Add knowledge bases and custom tools to power its responses.
+  </Step>
+  <Step title="Start a conversation">
+    `POST /v1/v2/conversations` to open a session, then `POST /v1/v2/conversations/{id}/turns` to send messages. Stream responses in real time with the `/turns/stream` endpoint.
+  </Step>
+  <Step title="Monitor and improve">
+    Use built-in analytics, evaluators, and knowledge-gap detection to continuously improve your agents over time.
+  </Step>
+</Steps>
+
+## Base URL
+
+All API requests target the sandbox environment:
+
+```
+https://api-sandbox.featherhq.com
+```
+
+<Note>
+  Contact Feather to provision your production environment credentials. All examples in these docs use the sandbox base URL.
+</Note>

@@ -1,0 +1,293 @@
+---
+title: "Ingest and Index Documents into a Knowledge Base"
+sidebarTitle: "Ingest Documents"
+description: "Upload files, paste text, or sync from Notion and Google Drive into a Feather knowledge base. Track ingestion status and search your indexed content."
+---
+
+Feather's knowledge base pipeline accepts documents from virtually any source — local files, raw text, and third-party platforms like Notion, Google Drive, and S3. Once ingested, documents are chunked, embedded, and indexed so your agents can perform semantic search at inference time. This guide covers the full ingestion lifecycle: uploading content, tracking job status, connecting external sources, and validating results with a live search query.
+
+---
+
+## Ingest files and text
+
+All file and text uploads go through a single unified endpoint that accepts `multipart/form-data`. You describe what you're uploading with a JSON **manifest** and attach the actual file bytes separately.
+
+**Endpoint:** `POST /v1/knowledge-base/knowledge-bases/{kb_id}/ingest`
+
+The request has two parts:
+
+| Field | Type | Description |
+|---|---|---|
+| `manifest` | JSON string | Array of item descriptors — one object per document |
+| `files` | File parts | The actual file bytes, referenced by `file_index` in the manifest |
+
+**Manifest item formats:**
+
+```json
+[
+  {
+    "type": "text",
+    "title": "FAQ",
+    "content": "What is Feather? Feather is an AI-powered customer experience platform."
+  },
+  {
+    "type": "file",
+    "file_index": 0,
+    "title": "Product Guide"
+  }
+]
+```
+
+Each item has a `type` of either `text` (inline content) or `file` (references an uploaded file part by its zero-based index). The `title` is stored with the document and surfaces in search results.
+
+**Full example — uploading a file and a text snippet together:**
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx4mno5pqrstuvwxyz0001/ingest \
+  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -F 'manifest=[{"type":"text","title":"FAQ","content":"What is Feather? Feather is an AI-powered customer experience platform."},{"type":"file","file_index":0,"title":"Product Guide"}]' \
+  -F 'files=@./product-guide.pdf'
+```
+</CodeGroup>
+
+```json
+{
+  "ingestion_job_id": "job_01hx7ingest9876543abcde",
+  "items": [
+    {
+      "index": 0,
+      "result": "queued",
+      "document_id": "doc_01hx7faq000000000000001"
+    },
+    {
+      "index": 1,
+      "result": "queued",
+      "document_id": "doc_01hx7pdf000000000000002"
+    }
+  ]
+}
+```
+
+Each item in the response reports either `queued` (accepted for processing) or `duplicate` (an identical document already exists in the knowledge base and was skipped). Save the `ingestion_job_id` to track progress.
+
+<Tip>
+  Duplicate detection is hash-based. If you re-upload the same file after editing it, the content hash changes and it will be ingested as a new version.
+</Tip>
+
+---
+
+## Track ingestion status
+
+Ingestion is asynchronous. Documents move through a pipeline — `queued → processing → completed` (or `failed`). Poll the job endpoint until `status` reaches a terminal state.
+
+**Poll a specific job:**
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/knowledge-base/ingestion-jobs/job_01hx7ingest9876543abcde \
+  -H "Authorization: Bearer $FEATHER_API_KEY"
+```
+</CodeGroup>
+
+```json
+{
+  "id": "job_01hx7ingest9876543abcde",
+  "knowledge_base_id": "kb_01hx4mno5pqrstuvwxyz0001",
+  "status": "processing",
+  "total_documents": 2,
+  "completed": 1,
+  "failed": 0,
+  "progress_pct": 50,
+  "created_at": "2024-05-14T11:00:00Z",
+  "updated_at": "2024-05-14T11:00:08Z"
+}
+```
+
+| Field | Description |
+|---|---|
+| `status` | `queued` · `processing` · `completed` · `failed` |
+| `total_documents` | Total items submitted in this job |
+| `completed` | Documents successfully embedded and indexed |
+| `failed` | Documents that encountered an error |
+| `progress_pct` | Integer 0–100 derived from completed / total |
+
+**Check aggregate status across the whole knowledge base:**
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx4mno5pqrstuvwxyz0001/ingestion-status \
+  -H "Authorization: Bearer $FEATHER_API_KEY"
+```
+</CodeGroup>
+
+```json
+{
+  "knowledge_base_id": "kb_01hx4mno5pqrstuvwxyz0001",
+  "total_documents": 42,
+  "indexed": 40,
+  "processing": 1,
+  "failed": 1
+}
+```
+
+Use this endpoint on the dashboard or during health checks to confirm your knowledge base is fully indexed before going live.
+
+<Tip>
+  Retry failed documents without re-uploading them. Send a `POST` to `/v1/knowledge-base/ingestion-jobs/{job_id}/retry` and Feather will re-queue only the failed items from that job.
+</Tip>
+
+---
+
+## Connect external sources
+
+For Notion pages, Google Drive folders, and S3 buckets, Feather syncs content automatically rather than requiring manual uploads. The flow is: create a connection → add the source → define roots → trigger a sync → optionally schedule recurring syncs.
+
+<Note>
+  External source integrations require an active integration connection for your provider. See [Connect an Integration](/guides/connect-an-integration) to set one up before continuing.
+</Note>
+
+<Steps>
+
+  <Step title="Add the source to your knowledge base">
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx4mno5pqrstuvwxyz0001/sources \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "provider": "notion",
+        "integration_connection_id": "conn_01hx8notion123456789abc"
+      }'
+    ```
+    </CodeGroup>
+
+    ```json
+    {
+      "id": "src_01hx8source9876543210ab",
+      "knowledge_base_id": "kb_01hx4mno5pqrstuvwxyz0001",
+      "provider": "notion",
+      "integration_connection_id": "conn_01hx8notion123456789abc",
+      "auto_sync_enabled": false,
+      "created_at": "2024-05-14T11:10:00Z"
+    }
+    ```
+
+    Supported values for `provider`: `notion`, `google_drive`, `s3`.
+  </Step>
+
+  <Step title="Add roots">
+    Roots define the top-level pages, folders, or prefixes that Feather will crawl. Everything nested beneath a root is included in the sync.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx4mno5pqrstuvwxyz0001/sources/src_01hx8source9876543210ab/roots \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "provider_item_id": "1a2b3c4d-notion-page-id-here"
+      }'
+    ```
+    </CodeGroup>
+
+    You can add multiple roots to the same source — for example, different top-level Notion pages for different product areas.
+  </Step>
+
+  <Step title="Trigger a manual sync">
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx4mno5pqrstuvwxyz0001/sources/src_01hx8source9876543210ab/sync \
+      -H "Authorization: Bearer $FEATHER_API_KEY"
+    ```
+    </CodeGroup>
+
+    ```json
+    {
+      "ingestion_job_id": "job_01hx8sync0000001234abcd",
+      "status": "queued"
+    }
+    ```
+
+    Track this job using the `ingestion-jobs/{job_id}` endpoint covered in the previous section.
+  </Step>
+
+  <Step title="Enable automatic recurring syncs">
+    Keep your knowledge base fresh by scheduling periodic syncs. Set `sync_interval_seconds` to control how often Feather re-crawls the source.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X PATCH https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/kb_01hx4mno5pqrstuvwxyz0001/sources/src_01hx8source9876543210ab/schedule \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "auto_sync_enabled": true,
+        "sync_interval_seconds": 3600
+      }'
+    ```
+    </CodeGroup>
+
+    The example above syncs the source every hour (`3600` seconds). Set `auto_sync_enabled: false` to pause automatic syncing without deleting the schedule configuration.
+  </Step>
+
+</Steps>
+
+---
+
+## Search your knowledge base
+
+Before connecting a knowledge base to an agent, validate that your content is indexed and returning relevant results.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/search \
+  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "How do I reset my password?",
+    "kb_ids": ["kb_01hx4mno5pqrstuvwxyz0001"],
+    "limit": 5
+  }'
+```
+</CodeGroup>
+
+```json
+{
+  "answerability": "answerable",
+  "results": [
+    {
+      "chunk_id": "chk_01hx9chunk111111111aaaa",
+      "document_id": "doc_01hx7pdf000000000000002",
+      "document_title": "Product Guide",
+      "content": "To reset your password, visit the login page and click 'Forgot password'. Enter your registered email address and follow the link sent to your inbox.",
+      "score": 0.94
+    },
+    {
+      "chunk_id": "chk_01hx9chunk222222222bbbb",
+      "document_id": "doc_01hx7faq000000000000001",
+      "document_title": "FAQ",
+      "content": "Password resets expire after 30 minutes. If your link has expired, request a new one from the login page.",
+      "score": 0.87
+    }
+  ]
+}
+```
+
+| Field | Description |
+|---|---|
+| `answerability` | Whether the knowledge base likely contains a sufficient answer: `answerable`, `partial`, or `unanswerable` |
+| `chunk_id` | Unique ID of the retrieved text chunk |
+| `document_title` | Title assigned during ingestion |
+| `content` | The raw text of the chunk |
+| `score` | Semantic similarity score (0–1). Higher is more relevant |
+
+<Warning>
+  A high `score` means the chunk is semantically similar to the query — not that it's factually correct. Always review new knowledge bases manually before enabling them in production agents.
+</Warning>
+
+---
+
+## What's next?
+
+<Card title="Knowledge Base API Reference" icon="book" href="/api-reference/knowledge-base/overview">
+  Full endpoint reference for knowledge bases, ingestion jobs, sources, and search.
+</Card>

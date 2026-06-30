@@ -1,0 +1,366 @@
+---
+title: "Voice Pipeline Configuration for AI Phone Agents"
+sidebarTitle: "Voice Config"
+description: "Create and manage voice pipeline configs that control the STT provider, TTS voice, interruptions, DTMF, voicemail detection, and silence handling."
+---
+
+## Overview
+
+Voice Pipeline Configs define how Feather processes audio for phone and web-based AI agents. Each config controls the full call experience: which speech-to-text (STT) engine transcribes caller audio, which text-to-speech (TTS) voice speaks agent responses, and how the system handles interruptions, silence, DTMF tones, and voicemail.
+
+**Base URL:** `https://api-sandbox.featherhq.com`
+
+---
+
+## Voices, TTS Models, and STT Models
+
+### List Available Voices
+
+```
+GET /v1/voice/voices
+```
+
+Returns all TTS voices available for use in pipeline configs.
+
+#### Response — `VoiceOut[]`
+
+<ResponseField name="id" type="string">
+  Voice identifier used in `VoicePipelineConfigCreate.voice_id`.
+</ResponseField>
+
+<ResponseField name="provider" type="string">
+  The TTS provider, e.g. `elevenlabs`.
+</ResponseField>
+
+<ResponseField name="external_id" type="string">
+  The voice's ID in the provider's system.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable voice name, e.g. `"Rachel"`.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Short description of the voice's characteristics.
+</ResponseField>
+
+<ResponseField name="preview_url" type="string">
+  URL of a short audio sample demonstrating the voice.
+</ResponseField>
+
+<ResponseField name="language" type="string">
+  BCP 47 language code, e.g. `en-US`, `es-ES`.
+</ResponseField>
+
+<ResponseField name="accent" type="string">
+  Accent description, e.g. `American`, `British`, `Australian`.
+</ResponseField>
+
+<ResponseField name="supported_models" type="string[]">
+  List of TTS model IDs this voice is compatible with.
+</ResponseField>
+
+---
+
+### List TTS Models
+
+```
+GET /v1/voice/tts-models
+```
+
+Returns all available TTS models. Use model IDs when configuring the `stt_model` field.
+
+<ResponseField name="id" type="string">
+  Model identifier.
+</ResponseField>
+
+<ResponseField name="provider" type="string">
+  Provider name, e.g. `elevenlabs`.
+</ResponseField>
+
+<ResponseField name="display_name" type="string">
+  Human-readable model name.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Notes on latency, quality, and best use case.
+</ResponseField>
+
+---
+
+### List STT Models
+
+```
+GET /v1/voice/stt-models
+```
+
+Returns all available speech-to-text models.
+
+<ResponseField name="id" type="string">
+  Model identifier.
+</ResponseField>
+
+<ResponseField name="provider" type="string">
+  Provider name, e.g. `deepgram`, `openai`.
+</ResponseField>
+
+<ResponseField name="display_name" type="string">
+  Human-readable model name.
+</ResponseField>
+
+<ResponseField name="languages" type="string[]">
+  BCP 47 language codes supported by this model.
+</ResponseField>
+
+---
+
+## Voice Pipeline Configs
+
+### Create a Config
+
+```
+POST /v1/voice/configs
+```
+
+<ParamField body="voice_id" type="string" required>
+  The TTS voice to use. Obtain valid IDs from `GET /v1/voice/voices`.
+</ParamField>
+
+<ParamField body="agent_id" type="string">
+  Associate this config with a specific agent. Either `agent_id` or `team_id` is required when not using `persona_id`.
+</ParamField>
+
+<ParamField body="team_id" type="string">
+  Associate this config with a team's default agent routing.
+</ParamField>
+
+<ParamField body="persona_id" type="string">
+  Associate this config with a persona rather than a specific agent.
+</ParamField>
+
+<ParamField body="stt_provider" type="string">
+  Speech-to-text provider, e.g. `deepgram` or `openai`. Defaults to the org's configured default.
+</ParamField>
+
+<ParamField body="stt_model" type="string">
+  STT model ID. Must be compatible with `stt_provider`.
+</ParamField>
+
+<ParamField body="stt_provider_data" type="object">
+  Provider-specific STT configuration. Passed directly to the STT provider's API.
+</ParamField>
+
+<ParamField body="interruptions_enabled" type="boolean" default="true">
+  Whether callers can interrupt the agent while it is speaking.
+</ParamField>
+
+<ParamField body="interruption_min_words" type="integer" default="3">
+  Minimum number of words the caller must speak before an interruption is registered. Helps prevent false interruptions from short noises.
+</ParamField>
+
+<ParamField body="interruption_backoff_ms" type="integer" default="500">
+  Milliseconds to wait after detecting speech before cutting off the agent. Increasing this reduces accidental interruptions in noisy environments.
+</ParamField>
+
+<ParamField body="voicemail_detection_mode" type="string" default="off">
+  How to handle voicemail detection:
+
+  | Value | Behaviour |
+  |---|---|
+  | `off` | No voicemail detection |
+  | `leave_message` | Detects voicemail greeting and leaves a pre-recorded message |
+</ParamField>
+
+<ParamField body="silence_timeout_ms" type="integer" default="10000">
+  Milliseconds of silence before the agent assumes the caller has disengaged and ends the call.
+</ParamField>
+
+<ParamField body="dtmf_enabled" type="boolean" default="false">
+  Whether DTMF (keypad tone) input is processed during the call.
+</ParamField>
+
+<ParamField body="language" type="string" default="en-US">
+  BCP 47 language code for the call. Used to configure both STT and TTS.
+</ParamField>
+
+<ParamField body="first_speaker" type="string" default="agent">
+  Who speaks first when the call connects: `agent` or `caller`.
+</ParamField>
+
+<ParamField body="text" type="string">
+  Opening message the agent speaks when `first_speaker` is `agent`.
+</ParamField>
+
+<ParamField body="instructions" type="string">
+  Additional real-time instructions injected into the agent's system prompt for this voice session.
+</ParamField>
+
+<ParamField body="ai_disclosure_text" type="string">
+  A legally required disclosure read to callers at the start of the call, e.g. `"This call may be handled by an AI assistant."`. Read before `text`.
+</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string">
+  Config identifier.
+</ResponseField>
+
+<ResponseField name="voice_id" type="string">
+  The TTS voice assigned.
+</ResponseField>
+
+<ResponseField name="agent_id" type="string">
+  Associated agent, if set.
+</ResponseField>
+
+<ResponseField name="team_id" type="string">
+  Associated team, if set.
+</ResponseField>
+
+<ResponseField name="stt_provider" type="string">
+  STT provider in use.
+</ResponseField>
+
+<ResponseField name="stt_model" type="string">
+  STT model in use.
+</ResponseField>
+
+<ResponseField name="interruptions_enabled" type="boolean">
+  Interruption setting.
+</ResponseField>
+
+<ResponseField name="voicemail_detection_mode" type="string">
+  Voicemail detection mode.
+</ResponseField>
+
+<ResponseField name="silence_timeout_ms" type="integer">
+  Silence timeout setting.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+---
+
+### List Configs
+
+```
+GET /v1/voice/configs
+```
+
+Returns all voice pipeline configs for the organisation.
+
+---
+
+### Get a Config
+
+```
+GET /v1/voice/configs/{id}
+```
+
+---
+
+### Update a Config
+
+```
+PATCH /v1/voice/configs/{id}
+```
+
+Accepts any subset of the create body fields. Only provided fields are updated.
+
+---
+
+### Delete a Config
+
+```
+DELETE /v1/voice/configs/{id}
+```
+
+<Warning>
+  Deleting a voice config that is actively used by an agent will cause that agent to fall back to default voice settings on the next call.
+</Warning>
+
+---
+
+### Get Agent Voice Config (Shortcut)
+
+```
+GET /v1/voice/agents/{agent_id}/voice-config
+```
+
+Returns the voice pipeline config currently associated with a specific agent. Equivalent to listing configs and filtering by `agent_id`.
+
+---
+
+## Example: Create a Voice Config
+
+<CodeGroup>
+
+```bash Create config
+curl -X POST https://api-sandbox.featherhq.com/v1/voice/configs \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "voice_id": "voice_rachel_en_us",
+    "agent_id": "agent_support_01",
+    "stt_provider": "deepgram",
+    "stt_model": "nova-2",
+    "interruptions_enabled": true,
+    "interruption_min_words": 2,
+    "interruption_backoff_ms": 400,
+    "voicemail_detection_mode": "leave_message",
+    "silence_timeout_ms": 12000,
+    "dtmf_enabled": false,
+    "language": "en-US",
+    "first_speaker": "agent",
+    "ai_disclosure_text": "Please be aware that you are speaking with an AI assistant.",
+    "text": "Hi, thank you for calling Acme Support. How can I help you today?"
+  }'
+```
+
+```bash List voices
+curl https://api-sandbox.featherhq.com/v1/voice/voices \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+```bash Get agent voice config
+curl https://api-sandbox.featherhq.com/v1/voice/agents/agent_support_01/voice-config \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+</CodeGroup>
+
+### Create Config Response
+
+```json
+{
+  "id": "vconf_3a9b2c1d",
+  "voice_id": "voice_rachel_en_us",
+  "agent_id": "agent_support_01",
+  "team_id": null,
+  "persona_id": null,
+  "stt_provider": "deepgram",
+  "stt_model": "nova-2",
+  "interruptions_enabled": true,
+  "interruption_min_words": 2,
+  "interruption_backoff_ms": 400,
+  "voicemail_detection_mode": "leave_message",
+  "silence_timeout_ms": 12000,
+  "dtmf_enabled": false,
+  "language": "en-US",
+  "first_speaker": "agent",
+  "ai_disclosure_text": "Please be aware that you are speaking with an AI assistant.",
+  "text": "Hi, thank you for calling Acme Support. How can I help you today?",
+  "instructions": null,
+  "created_at": "2024-06-01T09:00:00Z"
+}
+```
+
+<Tip>
+  Set `interruption_min_words: 5` or higher for call centre environments with significant background noise. This prevents hold music or ambient conversation from accidentally triggering interruptions.
+</Tip>
+
+<Note>
+  `ai_disclosure_text` is always spoken before the `text` greeting, regardless of field order in the request body. Ensure your disclosure complies with applicable regulations in your jurisdiction.
+</Note>

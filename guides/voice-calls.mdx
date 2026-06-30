@@ -1,0 +1,360 @@
+---
+title: "Build Voice Agents: Inbound and Outbound Calls"
+sidebarTitle: "Voice Calls"
+description: "Configure a voice pipeline, connect a phone number, and handle inbound and outbound calls with Feather's AI voice agents — including warm call transfer."
+---
+
+Feather's voice layer lets you deploy AI agents that speak and listen over real phone lines or directly in the browser. From a quick proof-of-concept web call to a production IVR with warm transfer to your support team — the same agent configuration powers it all. Voice sessions are fully transcribed, evaluated, and stored alongside your text conversations.
+
+## Prerequisites
+
+<Note>
+  Voice features require a connected **Twilio integration** to provision phone numbers and place calls. Follow the [Connect an Integration](/guides/connect-an-integration) guide to set up Twilio before proceeding. You'll also need at least one registered phone number (covered below).
+</Note>
+
+---
+
+## Create a voice pipeline config
+
+A voice pipeline config controls how your agent sounds and behaves on a call — which voice it uses, what it says first, whether it can be interrupted mid-sentence, and more.
+
+Start by browsing available voices:
+
+```bash
+curl https://api-sandbox.featherhq.com/v1/voice/voices \
+  -H "Authorization: Bearer <your_api_key>"
+```
+
+This returns a list of ElevenLabs-powered voices with preview URLs so you can audition them before committing.
+
+Once you've chosen a `voice_id`, create your pipeline config:
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/voice/configs \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "voice_id": "<voice_uuid>",
+    "agent_id": "<agent_id>",
+    "stt_provider": "deepgram",
+    "interruptions_enabled": true,
+    "language": "en",
+    "first_speaker": "agent",
+    "mode": "static",
+    "text": "Hello, thanks for calling. How can I help you today?"
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api-sandbox.featherhq.com/v1/voice/configs",
+    headers={"Authorization": "Bearer <your_api_key>"},
+    json={
+        "voice_id": "<voice_uuid>",
+        "agent_id": "<agent_id>",
+        "stt_provider": "deepgram",
+        "interruptions_enabled": True,
+        "language": "en",
+        "first_speaker": "agent",
+        "mode": "static",
+        "text": "Hello, thanks for calling. How can I help you today?"
+    }
+)
+print(response.json())
+```
+
+```typescript TypeScript
+const response = await fetch(
+  "https://api-sandbox.featherhq.com/v1/voice/configs",
+  {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer <your_api_key>",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      voice_id: "<voice_uuid>",
+      agent_id: "<agent_id>",
+      stt_provider: "deepgram",
+      interruptions_enabled: true,
+      language: "en",
+      first_speaker: "agent",
+      mode: "static",
+      text: "Hello, thanks for calling. How can I help you today?",
+    }),
+  }
+);
+const data = await response.json();
+```
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "id": "vconf_01hxbz9k2mr4pn3q7wes",
+  "voice_id": "<voice_uuid>",
+  "agent_id": "<agent_id>",
+  "stt_provider": "deepgram",
+  "interruptions_enabled": true,
+  "language": "en",
+  "first_speaker": "agent",
+  "mode": "static",
+  "text": "Hello, thanks for calling. How can I help you today?",
+  "created_at": "2024-09-01T10:00:00Z"
+}
+```
+
+| Field | Description |
+|---|---|
+| `stt_provider` | Speech-to-text engine. `deepgram` is recommended for low latency. |
+| `interruptions_enabled` | When `true`, callers can speak over the agent to interrupt it. |
+| `first_speaker` | `"agent"` to have the AI speak first; `"user"` to wait for the caller. |
+| `mode` | `"static"` uses the fixed `text` greeting; `"dynamic"` lets the agent generate its own opener. |
+
+---
+
+## Register a phone number
+
+To receive inbound calls or place outbound calls from a real number, register it with Feather and bind it to an agent.
+
+<Steps>
+  <Step title="Register the phone number">
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/communication/phone-numbers \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "phone_e164": "+15555550100",
+        "vendor": "twilio",
+        "vendor_mode": "byo",
+        "capabilities": ["voice", "sms"]
+      }'
+    ```
+
+    ```python Python
+    requests.post(
+        "https://api-sandbox.featherhq.com/v1/communication/phone-numbers",
+        headers={"Authorization": "Bearer <your_api_key>"},
+        json={
+            "phone_e164": "+15555550100",
+            "vendor": "twilio",
+            "vendor_mode": "byo",
+            "capabilities": ["voice", "sms"]
+        }
+    )
+    ```
+    </CodeGroup>
+
+    `vendor_mode: "byo"` means Bring Your Own — the number is already provisioned in your Twilio account.
+
+    **Response:**
+
+    ```json
+    {
+      "phone_number_id": "pn_01hxc2m3nr5qp4r8xfgt",
+      "phone_e164": "+15555550100",
+      "vendor": "twilio",
+      "capabilities": ["voice", "sms"],
+      "status": "active"
+    }
+    ```
+  </Step>
+
+  <Step title="Bind an agent to the number">
+    Create an inbound channel so that calls to this number are routed to your agent automatically.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST \
+      "https://api-sandbox.featherhq.com/v1/communication/phone-numbers/pn_01hxc2m3nr5qp4r8xfgt/channels" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "channel_type": "inbound_call",
+        "agent_id": "<agent_id>"
+      }'
+    ```
+
+    ```python Python
+    requests.post(
+        "https://api-sandbox.featherhq.com/v1/communication/phone-numbers/pn_01hxc2m3nr5qp4r8xfgt/channels",
+        headers={"Authorization": "Bearer <your_api_key>"},
+        json={"channel_type": "inbound_call", "agent_id": "<agent_id>"}
+    )
+    ```
+    </CodeGroup>
+
+    Your phone number now routes directly to the AI agent. Call it to test.
+  </Step>
+</Steps>
+
+---
+
+## Place an outbound call
+
+Programmatically dial a customer from a registered Feather number.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/voice/outbound \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_phone_number_id": "<phone_number_id>",
+    "to_phone_number": "+15555550123",
+    "agent_id": "<agent_id>"
+  }'
+```
+
+```python Python
+requests.post(
+    "https://api-sandbox.featherhq.com/v1/voice/outbound",
+    headers={"Authorization": "Bearer <your_api_key>"},
+    json={
+        "from_phone_number_id": "<phone_number_id>",
+        "to_phone_number": "+15555550123",
+        "agent_id": "<agent_id>"
+    }
+)
+```
+
+```typescript TypeScript
+await fetch("https://api-sandbox.featherhq.com/v1/voice/outbound", {
+  method: "POST",
+  headers: {
+    Authorization: "Bearer <your_api_key>",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    from_phone_number_id: "<phone_number_id>",
+    to_phone_number: "+15555550123",
+    agent_id: "<agent_id>",
+  }),
+});
+```
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "room_name": "feather-room-0hxc3n4mr7qp5s9ydfh",
+  "dispatch_id": "disp_01hxc3n4mr7qp5s9ydfh",
+  "session_id": "sess_01hxc3p5nr8qr6t0zegj"
+}
+```
+
+Use the `session_id` to look up the conversation transcript and evaluation results after the call ends.
+
+---
+
+## Start a web call (browser-based testing)
+
+Before going to production, test your voice agent directly in a browser without needing a real phone number. Feather creates a LiveKit room and returns credentials you pass to the LiveKit client SDK.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/voice/web-call \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "<agent_id>"}'
+```
+
+```python Python
+requests.post(
+    "https://api-sandbox.featherhq.com/v1/voice/web-call",
+    headers={"Authorization": "Bearer <your_api_key>"},
+    json={"agent_id": "<agent_id>"}
+)
+```
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "livekit_url": "wss://feather.livekit.cloud",
+  "access_token": "eyJhbGciOiJIUzI1NiJ9..."
+}
+```
+
+Connect from your frontend using the LiveKit JS SDK:
+
+```typescript
+import { Room } from "livekit-client";
+
+const room = new Room();
+await room.connect("<livekit_url>", "<access_token>");
+
+// Enable microphone to start speaking with the agent
+await room.localParticipant.setMicrophoneEnabled(true);
+```
+
+---
+
+## Warm call transfer
+
+A **warm transfer** lets your AI agent put the customer on a brief hold, dial a human supervisor in the background, brief them on the situation, and then bridge the two parties together. The customer gets a seamless handoff; the human operator is never caught off guard.
+
+<Steps>
+  <Step title="Register a bridge number">
+    Bridge numbers are the internal lines Feather dials when initiating a warm transfer. Register them at the org level using the Twilio number SID from your Twilio console.
+
+    ```bash
+    curl -X POST https://api-sandbox.featherhq.com/v1/identity/org/bridge-numbers \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{"twilio_number_sid": "<PN...>"}'
+    ```
+  </Step>
+
+  <Step title="Configure transfer targets in the agent">
+    Add a `transfer_call` block to your agent's `platform_tools` configuration. Each target defines a destination number, a display label, and the transfer mode.
+
+    ```json
+    {
+      "platform_tools": {
+        "transfer_call": {
+          "targets": [
+            {
+              "label": "Billing Team",
+              "destination": "+15555550200",
+              "mode": "warm"
+            },
+            {
+              "label": "Technical Support",
+              "destination": "+15555550201",
+              "mode": "warm"
+            }
+          ],
+          "warm": {
+            "max_dial_seconds": 30,
+            "hold_announcement_text": "One moment while I connect you."
+          }
+        }
+      }
+    }
+    ```
+
+    | Field | Description |
+    |---|---|
+    | `targets[].label` | The name the agent uses to identify and select this destination. |
+    | `targets[].destination` | E.164 phone number of the transfer target. |
+    | `targets[].mode` | `"warm"` to brief the agent first; `"cold"` for an immediate blind transfer. |
+    | `warm.max_dial_seconds` | How long to wait for the human to answer before abandoning the transfer. |
+    | `warm.hold_announcement_text` | Text-to-speech message played to the customer while on hold. |
+  </Step>
+
+  <Step title="Trigger a transfer">
+    When the agent determines a transfer is appropriate, it calls the `transfer_call` platform tool automatically. No additional code is needed — configure the tool and let the agent decide.
+  </Step>
+</Steps>
+
+<Tip>
+  Use `GET /v1/voice/voices` to browse all available ElevenLabs voices, complete with preview audio URLs. Pick a voice that matches your brand tone before creating your pipeline config.
+</Tip>

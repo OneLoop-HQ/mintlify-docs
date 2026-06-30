@@ -1,0 +1,277 @@
+---
+title: "Phone Numbers: Register and Bind Numbers to Agents"
+sidebarTitle: "Phone Numbers"
+description: "Register Twilio phone numbers, bind them to agents or teams for SMS and voice, and manage inbound/outbound call routing."
+---
+
+## Overview
+
+Phone numbers in Feather act as inbound and outbound communication endpoints. You register a number (platform-managed or bring-your-own Twilio), declare its capabilities, and then bind it to agents or teams via channel configurations. Compliance settings control which countries may send or receive calls and messages through your numbers.
+
+---
+
+## Register a Phone Number
+
+```
+POST /v1/communication/phone-numbers
+```
+
+Registers a new phone number with Feather.
+
+### Request Body
+
+<ParamField body="phone_e164" type="string" required>
+  The phone number in E.164 format (e.g. `+14155550100`).
+</ParamField>
+
+<ParamField body="vendor" type="string" required>
+  Telephony vendor. Currently `twilio`.
+</ParamField>
+
+<ParamField body="vendor_mode" type="string" required>
+  How the number is provisioned:
+  - `platform` — Feather provisions and manages the number in the platform Twilio account.
+  - `byo` — Bring your own Twilio number. Requires an active `integration_connection_id` for your Twilio account.
+</ParamField>
+
+<ParamField body="capabilities" type="array of strings" required>
+  Capabilities to enable. Any combination of `sms` and `voice`.
+</ParamField>
+
+<ParamField body="integration_connection_id" type="string (uuid)">
+  Required when `vendor_mode` is `byo`. The Feather integration connection for your Twilio account.
+</ParamField>
+
+### Response
+
+Returns a [PhoneNumberResponse](#phonenumberresponse).
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/communication/phone-numbers \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_e164": "+14155550100",
+    "vendor": "twilio",
+    "vendor_mode": "platform",
+    "capabilities": ["sms", "voice"]
+  }'
+```
+
+```json Response
+{
+  "id": "pn_3f2a1b0c-0000-0000-0000-000000000007",
+  "phone_e164": "+14155550100",
+  "vendor": "twilio",
+  "vendor_mode": "platform",
+  "capabilities": ["sms", "voice"],
+  "status": "active",
+  "created_at": "2024-06-01T09:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+## List Phone Numbers
+
+```
+GET /v1/communication/phone-numbers
+```
+
+### Query Parameters
+
+<ParamField query="capability" type="string">
+  Filter to numbers with a specific capability: `sms` or `voice`.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by status: `active`, `inactive`, or `pending`.
+</ParamField>
+
+---
+
+## Get a Phone Number
+
+```
+GET /v1/communication/phone-numbers/{id}
+```
+
+Returns a single phone number record by ID.
+
+---
+
+## Update a Phone Number
+
+```
+PATCH /v1/communication/phone-numbers/{id}
+```
+
+Updates the status or capabilities of a registered number.
+
+### Request Body
+
+<ParamField body="status" type="string">
+  Set to `active` or `inactive`.
+</ParamField>
+
+<ParamField body="capabilities" type="array of strings">
+  Replace the full capabilities list with the provided values.
+</ParamField>
+
+---
+
+## Delete a Phone Number
+
+```
+DELETE /v1/communication/phone-numbers/{id}
+```
+
+Deregisters the number from Feather. For `platform` numbers, this also releases the number from the Twilio account. For `byo` numbers, only the Feather record is removed.
+
+---
+
+## Channel Bindings
+
+Channels define how a phone number handles inbound and outbound traffic. Each number can have multiple channel bindings — one per channel type.
+
+### Add a Channel
+
+```
+POST /v1/communication/phone-numbers/{id}/channels
+```
+
+<ParamField body="channel_type" type="string" required>
+  One of `sms`, `inbound_call`, or `outbound_call`.
+</ParamField>
+
+<ParamField body="agent_id" type="string (uuid)">
+  Route traffic on this channel to a specific agent.
+</ParamField>
+
+<ParamField body="team_id" type="string (uuid)">
+  Route traffic on this channel to a team. Mutually exclusive with `agent_id`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/communication/phone-numbers/pn_3f2a1b0c-0000-0000-0000-000000000007/channels \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_type": "sms",
+    "agent_id": "a1b2c3d4-0000-0000-0000-000000000001"
+  }'
+```
+</CodeGroup>
+
+### List Channels
+
+```
+GET /v1/communication/phone-numbers/{id}/channels
+```
+
+Returns all channel bindings for a phone number.
+
+### Replace Channel Binding
+
+```
+PUT /v1/communication/phone-numbers/{id}/channels/{channel_type}
+```
+
+Replaces the full binding set for a specific channel type. Use this to atomically swap which agent or team handles a channel.
+
+<ParamField body="agent_id" type="string (uuid)">
+  New agent to bind to this channel.
+</ParamField>
+
+<ParamField body="team_id" type="string (uuid)">
+  New team to bind to this channel.
+</ParamField>
+
+### Remove a Channel
+
+```
+DELETE /v1/communication/phone-numbers/{id}/channels/{channel_type}
+```
+
+Removes the binding for the given channel type. The number retains the capability but incoming traffic of that type will no longer be routed.
+
+---
+
+## Compliance Settings
+
+Compliance settings control which countries your phone numbers can communicate with.
+
+### Get Compliance Settings
+
+```
+GET /v1/communication/compliance
+```
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/communication/compliance \
+  -H "x-api-key: <key>"
+```
+
+```json Response
+{
+  "allowed_countries": ["US", "CA", "GB", "AU"]
+}
+```
+</CodeGroup>
+
+### Update Compliance Settings
+
+```
+PUT /v1/communication/compliance
+```
+
+<ParamField body="allowed_countries" type="array of strings" required>
+  ISO 3166-1 alpha-2 country codes to allow. Replaces the existing list in full.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api-sandbox.featherhq.com/v1/communication/compliance \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"allowed_countries": ["US", "CA"]}'
+```
+</CodeGroup>
+
+---
+
+## PhoneNumberResponse
+
+<ResponseField name="id" type="string">
+  Unique phone number identifier.
+</ResponseField>
+
+<ResponseField name="phone_e164" type="string">
+  The phone number in E.164 format.
+</ResponseField>
+
+<ResponseField name="vendor" type="string">
+  Telephony vendor (`twilio`).
+</ResponseField>
+
+<ResponseField name="vendor_mode" type="string">
+  `platform` or `byo`.
+</ResponseField>
+
+<ResponseField name="capabilities" type="array of strings">
+  Active capabilities on this number: `sms`, `voice`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `active`, `inactive`, or `pending`.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  Timestamp when the number was registered.
+</ResponseField>

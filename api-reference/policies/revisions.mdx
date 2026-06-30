@@ -1,0 +1,251 @@
+---
+title: "Policy Revisions: Version Your Policy Configurations"
+sidebarTitle: "Policy Revisions"
+description: "Create named policy revisions, set one as active, and delete old versions. Policy configs are versioned independently from the policy identity."
+---
+
+## Overview
+
+A policy's check logic, action, and enforcement configuration are stored in revisions rather than on the policy itself. This lets you iterate on policy behavior — adjusting prompts, expressions, or actions — without affecting the policy's name, scope, or attachments. Only one revision is "active" at a time; all enforcement uses the active revision.
+
+<Tip>
+  When creating a new revision, pass `based_on_revision_id` to fork from an existing revision's settings instead of starting from scratch.
+</Tip>
+
+---
+
+## Create a Policy Revision
+
+```
+POST /v1/policies/{id}/revisions
+```
+
+Creates a new revision for the given policy. The revision is not active until you call [Set Active Revision](#set-active-revision).
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The policy ID to create a revision for.
+</ParamField>
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  A short label for this revision, e.g. `v2 — stricter prompt`.
+</ParamField>
+
+<ParamField body="description" type="string">
+  What changed in this revision compared to previous versions.
+</ParamField>
+
+<ParamField body="based_on_revision_id" type="string (uuid)">
+  Fork this revision from an existing revision. All fields from the source revision are pre-populated and can be overridden.
+</ParamField>
+
+<ParamField body="check_type" type="string" required>
+  `expression` or `llm_judge`.
+</ParamField>
+
+<ParamField body="check_config" type="object" required>
+  Check-specific configuration. For `expression`, provide an `expression` string. For `llm_judge`, provide a `prompt` string.
+</ParamField>
+
+<ParamField body="enforcement_point" type="string" required>
+  `input`, `pre_tool`, `post_tool`, or `agent_response`.
+</ParamField>
+
+<ParamField body="action" type="string" required>
+  `block`, `redact`, `append`, `require_approval`, or `handoff`.
+</ParamField>
+
+<ParamField body="action_config" type="object">
+  Action-specific configuration, e.g. `{"fallback_message": "This content is not allowed."}` for `block`.
+</ParamField>
+
+<ParamField body="tool_target" type="string">
+  Scope this revision to a specific tool. Format: `api:<tool_uuid>`.
+</ParamField>
+
+<ParamField body="mode" type="string" required>
+  `enforce` or `monitor`.
+</ParamField>
+
+<ParamField body="on_error" type="string" required>
+  `fail_open` or `fail_closed`.
+</ParamField>
+
+<ParamField body="strictness" type="string">
+  For `llm_judge`: `strict` or `relaxed`.
+</ParamField>
+
+<ParamField body="priority" type="integer">
+  Evaluation order relative to other policies at the same enforcement point.
+</ParamField>
+
+### Response
+
+Returns a [PolicyRevisionResponse](#policyrevisionresponse).
+
+### Example: Expression Block Policy
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/policies/pol_ab12cd34-0000-0000-0000-000000000020/revisions \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "v1 — block competitor mentions",
+    "description": "Blocks agent responses that mention competitor brand names.",
+    "check_type": "expression",
+    "check_config": {
+      "expression": "response.text contains_any([\"CompetitorA\", \"CompetitorB\", \"CompetitorC\"])"
+    },
+    "enforcement_point": "agent_response",
+    "action": "block",
+    "action_config": {
+      "fallback_message": "I can only assist with questions about our own products."
+    },
+    "mode": "enforce",
+    "on_error": "fail_open",
+    "priority": 5
+  }'
+```
+
+```json Response
+{
+  "id": "prev_cc11dd22-0000-0000-0000-000000000031",
+  "policy_id": "pol_ab12cd34-0000-0000-0000-000000000020",
+  "name": "v1 — block competitor mentions",
+  "check_type": "expression",
+  "check_config": {
+    "expression": "response.text contains_any([\"CompetitorA\", \"CompetitorB\", \"CompetitorC\"])"
+  },
+  "enforcement_point": "agent_response",
+  "action": "block",
+  "action_config": {
+    "fallback_message": "I can only assist with questions about our own products."
+  },
+  "mode": "enforce",
+  "on_error": "fail_open",
+  "priority": 5,
+  "created_at": "2024-06-01T11:30:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+## List Policy Revisions
+
+```
+GET /v1/policies/{id}/revisions
+```
+
+Returns all revisions for the given policy, ordered by creation time descending.
+
+---
+
+## Get a Policy Revision
+
+```
+GET /v1/policies/revisions/{id}
+```
+
+Returns a single revision by its revision ID (not the policy ID).
+
+---
+
+## Delete a Policy Revision
+
+```
+DELETE /v1/policies/revisions/{id}
+```
+
+Deletes a revision. You cannot delete the currently active revision.
+
+---
+
+## Set Active Revision
+
+```
+POST /v1/policies/{id}/set-active-revision
+```
+
+Switches which revision is used for enforcement. Takes effect immediately for all future evaluations.
+
+### Request Body
+
+<ParamField body="revision_id" type="string (uuid)" required>
+  The revision to activate. Must belong to this policy.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/policies/pol_ab12cd34-0000-0000-0000-000000000020/set-active-revision \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"revision_id": "prev_cc11dd22-0000-0000-0000-000000000031"}'
+```
+
+```json Response
+{
+  "policy_id": "pol_ab12cd34-0000-0000-0000-000000000020",
+  "active_revision_id": "prev_cc11dd22-0000-0000-0000-000000000031",
+  "activated_at": "2024-06-01T11:35:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+## PolicyRevisionResponse
+
+<ResponseField name="id" type="string">
+  Unique revision identifier.
+</ResponseField>
+
+<ResponseField name="policy_id" type="string">
+  The policy this revision belongs to.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable revision label.
+</ResponseField>
+
+<ResponseField name="check_type" type="string">
+  `expression` or `llm_judge`.
+</ResponseField>
+
+<ResponseField name="check_config" type="object">
+  The check configuration object. Contents vary by `check_type`.
+</ResponseField>
+
+<ResponseField name="enforcement_point" type="string">
+  The pipeline stage where this revision's check is applied.
+</ResponseField>
+
+<ResponseField name="action" type="string">
+  Action taken when the check triggers.
+</ResponseField>
+
+<ResponseField name="action_config" type="object">
+  Action-specific parameters.
+</ResponseField>
+
+<ResponseField name="mode" type="string">
+  `enforce` or `monitor`.
+</ResponseField>
+
+<ResponseField name="on_error" type="string">
+  `fail_open` or `fail_closed`.
+</ResponseField>
+
+<ResponseField name="strictness" type="string">
+  `strict` or `relaxed` (for `llm_judge` checks).
+</ResponseField>
+
+<ResponseField name="priority" type="integer">
+  Evaluation priority order.
+</ResponseField>

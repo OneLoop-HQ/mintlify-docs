@@ -1,0 +1,131 @@
+---
+title: "GET /v1/identity/whoami — Resolve Your Identity"
+sidebarTitle: "Who Am I"
+description: "Returns the authenticated caller's identity, role, and knowledge base clearance level. Use this to verify your API key and discover your organization ID."
+---
+
+The `/v1/identity/whoami` endpoint is the fastest way to confirm that your API key is valid and to inspect the permissions attached to it. It returns the caller's user identity, organization membership, assigned role, and knowledge base clearance level — all in a single lightweight request.
+
+No additional scopes or organization context are required. Every authenticated role (`org:admin`, `org:member`, `org:viewer`) can call this endpoint.
+
+## Endpoint
+
+```
+GET https://api-sandbox.featherhq.com/v1/identity/whoami
+```
+
+## Request
+
+This endpoint accepts no query parameters or request body.
+
+### Headers
+
+<ParamField header="x-api-key" type="string">
+  Your Feather API key. You may also pass this as `Authorization: Bearer <key>`.
+</ParamField>
+
+<ParamField header="Authorization" type="string">
+  Bearer token alternative to `x-api-key`. Format: `Bearer <key>`.
+</ParamField>
+
+## Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url https://api-sandbox.featherhq.com/v1/identity/whoami \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+```python Python
+import httpx
+
+response = httpx.get(
+    "https://api-sandbox.featherhq.com/v1/identity/whoami",
+    headers={"x-api-key": "YOUR_API_KEY"},
+)
+print(response.json())
+```
+
+```typescript TypeScript
+const response = await fetch(
+  "https://api-sandbox.featherhq.com/v1/identity/whoami",
+  {
+    method: "GET",
+    headers: { "x-api-key": "YOUR_API_KEY" },
+  }
+);
+const data = await response.json();
+console.log(data);
+```
+
+</CodeGroup>
+
+## Response
+
+**200 OK** — Returns a `WhoAmIResponse` object.
+
+<ResponseField name="user_id" type="string (uuid)" required>
+  The internal Feather UUID for the authenticated user.
+</ResponseField>
+
+<ResponseField name="clerk_user_id" type="string" required>
+  The Clerk identity provider user ID associated with this account.
+</ResponseField>
+
+<ResponseField name="email" type="string | null">
+  The verified email address of the authenticated user. `null` if no email is on file.
+</ResponseField>
+
+<ResponseField name="display_name" type="string | null">
+  The user's human-readable display name. `null` if not yet configured.
+</ResponseField>
+
+<ResponseField name="role" type="string" required>
+  The caller's role within the organization. One of:
+
+  - `org:admin` — Full read/write access to all resources.
+  - `org:member` — Read/write access to conversations and agents; no billing or member management.
+  - `org:viewer` — Read-only access across the organization.
+</ResponseField>
+
+<ResponseField name="organization_id" type="string (uuid)" required>
+  The UUID of the organization this API key belongs to. Use this value as the `org_id` when constructing requests that require organization context.
+</ResponseField>
+
+<ResponseField name="organization_name" type="string" required>
+  The human-readable name of the organization.
+</ResponseField>
+
+<ResponseField name="kb_clearance_level" type="integer" required>
+  A numeric value between `0` and `100` representing this caller's knowledge base access clearance. Knowledge base articles with a required clearance level above this value will not be surfaced in agent responses for this key.
+</ResponseField>
+
+<ResponseField name="kb_acl_enabled" type="boolean" required>
+  Whether knowledge base access control lists (ACLs) are enforced for this organization. When `false`, `kb_clearance_level` has no effect.
+</ResponseField>
+
+## Example Response
+
+```json
+{
+  "user_id": "a3f1c2d4-8b0e-4f77-9c3a-2d6e1b0fa812",
+  "clerk_user_id": "user_2abc123XYZdef456",
+  "email": "ada@example.com",
+  "display_name": "Ada Lovelace",
+  "role": "org:admin",
+  "organization_id": "d7e2b3c1-0a4f-4e88-b7d5-9f3c2a1e6d04",
+  "organization_name": "Acme Support",
+  "kb_clearance_level": 80,
+  "kb_acl_enabled": true
+}
+```
+
+<Note>
+  This endpoint does not require any org-scoped headers. It automatically derives organization context from the API key itself.
+</Note>
+
+<Tip>
+  Call `whoami` at the start of your integration to capture `organization_id`. Many other endpoints (such as end-user resolution) require this value, and hardcoding it avoids an extra round-trip per request in production.
+</Tip>

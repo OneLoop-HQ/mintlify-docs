@@ -1,0 +1,229 @@
+---
+title: "Retention Policies: Control Conversation Data Lifecycle"
+sidebarTitle: "Retention"
+description: "Create retention policies with turn and session retention windows, archive strategies, and enable legal holds to prevent data deletion."
+---
+
+## Overview
+
+Retention policies govern how long Feather keeps conversation turns and session records before archiving or deleting them. You can define multiple named policies and mark one as the default. For knowledge base content, a separate governance endpoint controls KB-specific retention and legal holds.
+
+---
+
+## Create a Retention Policy
+
+```
+POST /v1/retention-policies
+```
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  A descriptive name for this policy, e.g. `Standard 90-day` or `GDPR-EU`.
+</ParamField>
+
+<ParamField body="turn_retention_days" type="integer">
+  Number of days to retain individual conversation turns (messages). After this period, turns are processed according to `archive_strategy`. If omitted, turns are retained indefinitely.
+</ParamField>
+
+<ParamField body="session_retention_days" type="integer">
+  Number of days to retain session-level records (metadata, status, summaries). If omitted, sessions are retained indefinitely.
+</ParamField>
+
+<ParamField body="archive_strategy" type="string" required>
+  What happens to records when the retention window expires:
+  - `soft_delete` — Records are marked deleted and hidden from API results, but remain in storage for a grace period.
+  - `hard_delete` — Records are permanently destroyed. Irreversible.
+</ParamField>
+
+<ParamField body="is_default" type="boolean">
+  If `true`, this policy is applied to all new sessions that don't have an explicit policy assignment. Only one policy can be the default; setting this to `true` clears the default flag on the previous default policy.
+</ParamField>
+
+### Response
+
+Returns a [RetentionPolicyResponse](#retentionpolicyresponse).
+
+### Example: 90-Day Policy
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/retention-policies \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Standard 90-day",
+    "turn_retention_days": 90,
+    "session_retention_days": 90,
+    "archive_strategy": "soft_delete",
+    "is_default": true
+  }'
+```
+
+```json Response
+{
+  "id": "ret_5a4b3c2d-0000-0000-0000-000000000015",
+  "name": "Standard 90-day",
+  "turn_retention_days": 90,
+  "session_retention_days": 90,
+  "archive_strategy": "soft_delete",
+  "is_default": true,
+  "created_at": "2024-06-01T09:00:00Z",
+  "updated_at": "2024-06-01T09:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+## List Retention Policies
+
+```
+GET /v1/retention-policies
+```
+
+Returns all retention policies for your organization.
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/retention-policies \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## Update a Retention Policy
+
+```
+PUT /v1/retention-policies/{id}
+```
+
+Replaces all fields on a retention policy. Fields omitted from the request body are reset to their defaults.
+
+### Request Body
+
+Same fields as [Create a Retention Policy](#create-a-retention-policy).
+
+---
+
+## Delete a Retention Policy
+
+```
+DELETE /v1/retention-policies/{id}
+```
+
+Deletes a retention policy. You cannot delete the default policy — assign a different policy as the default first.
+
+---
+
+## Knowledge Base Retention Policy
+
+The KB retention policy is a separate governance configuration specific to knowledge base documents. It supports legal holds that prevent any document deletion while the hold is active.
+
+### Get KB Retention Policy
+
+```
+GET /v1/knowledge-base/retention-policy
+```
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/knowledge-base/retention-policy \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+### Update KB Retention Policy
+
+```
+PUT /v1/knowledge-base/retention-policy
+```
+
+<ParamField body="retention_days" type="integer" required>
+  Minimum retention window for knowledge base documents, in days. Must be at least **90**.
+</ParamField>
+
+<ParamField body="legal_hold_enabled" type="boolean">
+  When `true`, no KB documents can be deleted or purged — regardless of retention windows — until the hold is released.
+</ParamField>
+
+<ParamField body="legal_hold_reason" type="string">
+  Free-text explanation for the legal hold, e.g. `"SEC investigation hold — case #2024-001"`. Required when `legal_hold_enabled` is `true`.
+</ParamField>
+
+<ParamField body="archive_before_delete" type="boolean">
+  When `true`, documents are exported to `archive_destination` before being deleted.
+</ParamField>
+
+<ParamField body="archive_destination" type="string">
+  Storage destination URI for archived KB documents (e.g. an S3 bucket URL). Required when `archive_before_delete` is `true`.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api-sandbox.featherhq.com/v1/knowledge-base/retention-policy \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "retention_days": 365,
+    "legal_hold_enabled": true,
+    "legal_hold_reason": "Internal audit Q4 2024",
+    "archive_before_delete": true,
+    "archive_destination": "s3://acme-archives/feather-kb/"
+  }'
+```
+
+```json Response
+{
+  "retention_days": 365,
+  "legal_hold_enabled": true,
+  "legal_hold_reason": "Internal audit Q4 2024",
+  "archive_before_delete": true,
+  "archive_destination": "s3://acme-archives/feather-kb/",
+  "updated_at": "2024-06-01T09:30:00Z"
+}
+```
+</CodeGroup>
+
+<Warning>
+  When `legal_hold_enabled` is `true`, all automatic and manual deletion operations on knowledge base documents are blocked. Ensure you release the hold explicitly once the hold requirement ends.
+</Warning>
+
+---
+
+## RetentionPolicyResponse
+
+<ResponseField name="id" type="string">
+  Unique retention policy identifier.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable policy name.
+</ResponseField>
+
+<ResponseField name="turn_retention_days" type="integer | null">
+  Days to retain turns. `null` means indefinite retention.
+</ResponseField>
+
+<ResponseField name="session_retention_days" type="integer | null">
+  Days to retain session records. `null` means indefinite retention.
+</ResponseField>
+
+<ResponseField name="archive_strategy" type="string">
+  `soft_delete` or `hard_delete`.
+</ResponseField>
+
+<ResponseField name="is_default" type="boolean">
+  Whether this is the organization's default retention policy.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  Timestamp when the policy was created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string (ISO 8601)">
+  Timestamp of the most recent update.
+</ResponseField>

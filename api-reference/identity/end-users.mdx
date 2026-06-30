@@ -1,0 +1,388 @@
+---
+title: "End Users: Manage Customer Identities in Feather"
+sidebarTitle: "End Users"
+description: "Create, retrieve, update, and delete end users. Resolve channel identities to user IDs and manage contact methods."
+---
+
+End users are the customers your AI agents interact with. Feather tracks end users across channels — voice, chat, email, SMS — by linking each channel identity to a single unified `end_user_id`. Use these endpoints to resolve, enrich, and manage those records.
+
+---
+
+## POST /v1/identity/resolve
+
+Resolve a channel-specific external identity to a Feather `end_user_id`. If no matching end user exists, one is created automatically.
+
+This is the primary entry point when a conversation begins. Pass the channel type and the user's identifier on that channel; Feather returns the canonical user ID to associate with the session.
+
+```
+POST https://api-sandbox.featherhq.com/v1/identity/resolve
+```
+
+### Request Body
+
+<ParamField body="channel" type="string" required>
+  The communication channel. Supported values: `voice`, `sms`, `chat`, `email`, `whatsapp`.
+</ParamField>
+
+<ParamField body="external_id" type="string" required>
+  The user's identifier on the given channel. For `voice`/`sms` this is typically the caller's E.164 phone number. For `chat` or `email` it may be an account ID or email address.
+</ParamField>
+
+<ParamField body="org_external_end_user_id" type="string">
+  Optional. Your own system's identifier for this user (e.g., a CRM contact ID). When provided, Feather stores this alongside the Feather-native ID and can use it to deduplicate records across channels.
+</ParamField>
+
+### Response Fields
+
+<ResponseField name="end_user_id" type="string (uuid)" required>
+  The canonical Feather end user ID. Use this in all subsequent requests for this user.
+</ResponseField>
+
+<ResponseField name="org_id" type="string (uuid)" required>
+  The organization this end user belongs to.
+</ResponseField>
+
+<ResponseField name="is_new" type="boolean" required>
+  `true` if a new end user record was created during this resolution, `false` if an existing record was matched.
+</ResponseField>
+
+<ResponseField name="context_level" type="integer" required>
+  The knowledge base clearance level inherited by this end user's session context. Ranges from `0` to `100`.
+</ResponseField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url https://api-sandbox.featherhq.com/v1/identity/resolve \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "channel": "voice",
+    "external_id": "+15550009876",
+    "org_external_end_user_id": "crm-contact-88421"
+  }'
+```
+
+```python Python
+import httpx
+
+res = httpx.post(
+    "https://api-sandbox.featherhq.com/v1/identity/resolve",
+    headers={"x-api-key": "YOUR_API_KEY"},
+    json={
+        "channel": "voice",
+        "external_id": "+15550009876",
+        "org_external_end_user_id": "crm-contact-88421",
+    },
+)
+print(res.json())
+```
+
+</CodeGroup>
+
+### Example Response
+
+```json
+{
+  "end_user_id": "f4c2a1b3-9e0d-4c77-8a2f-3b1d6e0c7a99",
+  "org_id": "d7e2b3c1-0a4f-4e88-b7d5-9f3c2a1e6d04",
+  "is_new": true,
+  "context_level": 50
+}
+```
+
+---
+
+## GET /v1/identity/end-users
+
+List end users in your organization with optional filtering and cursor-based pagination.
+
+```
+GET https://api-sandbox.featherhq.com/v1/identity/end-users
+```
+
+### Query Parameters
+
+<ParamField query="org_external_end_user_id" type="string">
+  Filter results to the end user with this external CRM or system ID.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Opaque pagination cursor returned in the previous response's `next_cursor` field.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Maximum number of records to return per page. Default: `20`. Maximum: `100`.
+</ParamField>
+
+### Response Fields
+
+<ResponseField name="items" type="array">
+  Array of end user summary objects. See `EndUserProfileResponse` below.
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string | null">
+  Pass this value as `cursor` on the next request to retrieve the following page. `null` when no more pages exist.
+</ResponseField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://api-sandbox.featherhq.com/v1/identity/end-users?limit=25' \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+</CodeGroup>
+
+---
+
+## GET /v1/identity/end-users/{id}
+
+Retrieve the full profile for a single end user, including all contact methods on file.
+
+```
+GET https://api-sandbox.featherhq.com/v1/identity/end-users/{id}
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The Feather `end_user_id`.
+</ParamField>
+
+### Response Fields (`EndUserProfileResponse`)
+
+<ResponseField name="id" type="string (uuid)" required>
+  The end user's Feather-internal UUID.
+</ResponseField>
+
+<ResponseField name="org_id" type="string (uuid)" required>
+  The organization this user belongs to.
+</ResponseField>
+
+<ResponseField name="org_external_end_user_id" type="string | null">
+  Your system's external identifier for this user, if set.
+</ResponseField>
+
+<ResponseField name="display_name" type="string | null">
+  Human-readable name for the end user.
+</ResponseField>
+
+<ResponseField name="primary_email" type="string | null">
+  The user's primary email address.
+</ResponseField>
+
+<ResponseField name="primary_phone" type="string | null">
+  The user's primary phone number in E.164 format.
+</ResponseField>
+
+<ResponseField name="metadata" type="object | null">
+  Arbitrary key-value metadata your system has attached to this user record.
+</ResponseField>
+
+<ResponseField name="contacts" type="array">
+  <Expandable title="ContactEntry">
+    <ResponseField name="id" type="string (uuid)">
+      Feather ID for this contact entry.
+    </ResponseField>
+    <ResponseField name="channel" type="string">
+      Channel type: `voice`, `sms`, `chat`, `email`, `whatsapp`.
+    </ResponseField>
+    <ResponseField name="value" type="string">
+      The contact value on this channel (phone number, email, etc.).
+    </ResponseField>
+    <ResponseField name="is_verified" type="boolean">
+      Whether this contact method has been verified.
+    </ResponseField>
+    <ResponseField name="created_at" type="string (ISO 8601)">
+      When this contact was attached.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)" required>
+  When the end user record was first created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string (ISO 8601)" required>
+  When the end user record was last modified.
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "id": "f4c2a1b3-9e0d-4c77-8a2f-3b1d6e0c7a99",
+  "org_id": "d7e2b3c1-0a4f-4e88-b7d5-9f3c2a1e6d04",
+  "org_external_end_user_id": "crm-contact-88421",
+  "display_name": "Jordan Smith",
+  "primary_email": "jordan@example.com",
+  "primary_phone": "+15550009876",
+  "metadata": { "tier": "premium", "region": "us-west" },
+  "contacts": [
+    {
+      "id": "c1d2e3f4-0000-4abc-9999-aabbccddeeff",
+      "channel": "voice",
+      "value": "+15550009876",
+      "is_verified": true,
+      "created_at": "2024-03-01T10:00:00Z"
+    },
+    {
+      "id": "d2e3f4a5-1111-4bcd-aaaa-bbccddeeff00",
+      "channel": "email",
+      "value": "jordan@example.com",
+      "is_verified": false,
+      "created_at": "2024-03-15T14:30:00Z"
+    }
+  ],
+  "created_at": "2024-03-01T10:00:00Z",
+  "updated_at": "2024-03-15T14:30:00Z"
+}
+```
+
+---
+
+## PUT /v1/identity/end-users/{id}
+
+Update profile fields for an existing end user. Only the fields you include in the request body are modified.
+
+```
+PUT https://api-sandbox.featherhq.com/v1/identity/end-users/{id}
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The Feather `end_user_id` to update.
+</ParamField>
+
+### Request Body
+
+<ParamField body="display_name" type="string">
+  Human-readable name for the user.
+</ParamField>
+
+<ParamField body="primary_email" type="string">
+  Primary email address.
+</ParamField>
+
+<ParamField body="primary_phone" type="string">
+  Primary phone in E.164 format (e.g., `+15550001234`).
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Arbitrary key-value pairs. This is a full replace — the entire metadata object is overwritten with the value you provide.
+</ParamField>
+
+<ParamField body="org_external_end_user_id" type="string">
+  Update the external CRM or system identifier for this user.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url https://api-sandbox.featherhq.com/v1/identity/end-users/f4c2a1b3-9e0d-4c77-8a2f-3b1d6e0c7a99 \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "display_name": "Jordan Smith",
+    "primary_email": "jordan@example.com",
+    "metadata": { "tier": "enterprise", "region": "us-east" }
+  }'
+```
+
+</CodeGroup>
+
+Returns the updated `EndUserProfileResponse`.
+
+---
+
+## DELETE /v1/identity/end-users/{id}
+
+Permanently delete an end user and all associated data. This is a GDPR erasure operation — conversation history, contact records, and metadata are all removed.
+
+```
+DELETE https://api-sandbox.featherhq.com/v1/identity/end-users/{id}
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The Feather `end_user_id` to erase.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url https://api-sandbox.featherhq.com/v1/identity/end-users/f4c2a1b3-9e0d-4c77-8a2f-3b1d6e0c7a99 \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+</CodeGroup>
+
+Returns `204 No Content` on success.
+
+<Warning>
+  This operation is **irreversible**. All conversation history, contact entries, and metadata for this user are permanently deleted. Ensure you have complied with your own data retention obligations before calling this endpoint.
+</Warning>
+
+---
+
+## POST /v1/identity/end-users/{id}/contacts
+
+Attach a new verified contact method to an existing end user.
+
+```
+POST https://api-sandbox.featherhq.com/v1/identity/end-users/{id}/contacts
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The end user to attach the contact to.
+</ParamField>
+
+### Request Body
+
+<ParamField body="channel" type="string" required>
+  The communication channel: `voice`, `sms`, `chat`, `email`, `whatsapp`.
+</ParamField>
+
+<ParamField body="value" type="string" required>
+  The contact value for this channel. For `voice`/`sms`, use E.164 format. For `email`, use a valid email address.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url https://api-sandbox.featherhq.com/v1/identity/end-users/f4c2a1b3-9e0d-4c77-8a2f-3b1d6e0c7a99/contacts \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "channel": "whatsapp",
+    "value": "+15550009876"
+  }'
+```
+
+</CodeGroup>
+
+Returns the created `ContactEntry` object.
+
+<Note>
+  Feather does not independently verify the contact value at attachment time. Use the `is_verified` field to track whether your system has confirmed the channel identity.
+</Note>

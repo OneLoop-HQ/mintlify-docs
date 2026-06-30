@@ -1,0 +1,261 @@
+---
+title: "Simulation Suites and Runs: Test Agents at Scale"
+sidebarTitle: "Sim Suites"
+description: "Build simulation suites from scenario-persona pairs, dispatch parallel runs against an agent revision, and review eval verdicts per run."
+---
+
+## Overview
+
+A simulation suite is a collection of scenario-persona pairs that you run as a batch against an agent. All items in a suite run in parallel. After the run completes, Feather aggregates the eval verdicts into a `release_eval_verdict` that can gate deployments.
+
+---
+
+## Create a Suite
+
+```
+POST /v1/sim-suites
+```
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Suite name, e.g. `Billing Agent — Release Candidate v1.2`.
+</ParamField>
+
+<ParamField body="description" type="string">
+  What this suite tests.
+</ParamField>
+
+<ParamField body="is_active" type="boolean">
+  Whether the suite is available for new runs. Default: `true`.
+</ParamField>
+
+<ParamField body="items" type="array of objects" required>
+  The scenario-persona pairs to include. Each item:
+  - `persona_id` (string, uuid, required) — The persona to simulate.
+  - `scenario_id` (string, uuid, required) — The scenario to run.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/sim-suites \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Billing v1.2 Release Suite",
+    "description": "Full regression suite for the billing agent before v1.2 release.",
+    "is_active": true,
+    "items": [
+      { "persona_id": "pers_aabb1122-0000-0000-0000-000000000001", "scenario_id": "scen_ccdd3344-0000-0000-0000-000000000001" },
+      { "persona_id": "pers_aabb1122-0000-0000-0000-000000000002", "scenario_id": "scen_ccdd3344-0000-0000-0000-000000000002" }
+    ]
+  }'
+```
+</CodeGroup>
+
+---
+
+## List Suites
+
+```
+GET /v1/sim-suites
+```
+
+Returns all simulation suites.
+
+---
+
+## Get a Suite
+
+```
+GET /v1/sim-suites/{id}
+```
+
+---
+
+## Update a Suite
+
+```
+PUT /v1/sim-suites/{id}
+```
+
+Replaces all fields. Same body as [Create a Suite](#create-a-suite).
+
+---
+
+## Delete a Suite
+
+```
+DELETE /v1/sim-suites/{id}
+```
+
+---
+
+## Clone a Suite
+
+```
+POST /v1/sim-suites/{id}/clone
+```
+
+Creates a copy of the suite with the same items.
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Name for the cloned suite.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description for the clone.
+</ParamField>
+
+---
+
+## Manage Suite Items
+
+### Add an Item
+
+```
+POST /v1/sim-suites/{id}/items
+```
+
+Adds a scenario-persona pair to the suite.
+
+### Update an Item
+
+```
+PUT /v1/sim-suites/{id}/items/{item_id}
+```
+
+Replaces a specific item's persona or scenario.
+
+### Remove an Item
+
+```
+DELETE /v1/sim-suites/{id}/items/{item_id}
+```
+
+---
+
+## Run a Suite
+
+```
+POST /v1/sim-suites/{id}/runs
+```
+
+Dispatches all items in the suite as parallel simulation runs.
+
+### Request Body
+
+<ParamField body="agent_id" type="string (uuid)" required>
+  The agent to run the simulations against.
+</ParamField>
+
+<ParamField body="agent_revision_id" type="string (uuid)">
+  Pin the run to a specific agent revision. If omitted, uses the agent's active revision.
+</ParamField>
+
+<ParamField body="channel" type="string">
+  Communication channel for the simulations: `text` or `voice`. Default: `text`.
+</ParamField>
+
+<ParamField body="tool_overrides" type="object">
+  Map of tool names to [CannedToolResponse](/api-reference/simulations/runs#cannedtoolresponse) objects. These override scenario-level `mock_world` settings for the entire run.
+</ParamField>
+
+### Response: SimulationSuiteRunResponse
+
+<ResponseField name="id" type="string">
+  Unique suite run identifier.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Overall suite run status: `pending`, `running`, `completed`, `cancelled`, `failed`.
+</ResponseField>
+
+<ResponseField name="runs" type="array of SimulationRunResponse">
+  Individual simulation run records — one per suite item.
+</ResponseField>
+
+<ResponseField name="release_eval_status" type="string">
+  Status of the release evaluation: `pending`, `running`, `completed`.
+</ResponseField>
+
+<ResponseField name="release_eval_verdict" type="object">
+  Aggregated release gate verdict. Contains:
+  - `summary` — `passed`, `failed`, or `partial`.
+  - `scenarios` — Per-scenario verdict details, each with an `evaluators` array showing per-evaluator outcomes.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/sim-suites/suite_ee55ff66-0000-0000-0000-000000000080/runs \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "a1b2c3d4-0000-0000-0000-000000000001",
+    "agent_revision_id": "rev_99887766-0000-0000-0000-000000000091",
+    "channel": "text"
+  }'
+```
+
+```json Response
+{
+  "id": "srun_11223344-0000-0000-0000-000000000085",
+  "status": "running",
+  "release_eval_status": "pending",
+  "runs": [
+    {
+      "id": "simrun_aabbccdd-0000-0000-0000-000000000091",
+      "status": "running",
+      "persona_id": "pers_aabb1122-0000-0000-0000-000000000001",
+      "scenario_id": "scen_ccdd3344-0000-0000-0000-000000000001"
+    }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+## List Suite Runs
+
+```
+GET /v1/sim-suites/{id}/runs
+```
+
+Returns all runs for a suite, ordered by creation time descending.
+
+---
+
+## Get a Suite Run
+
+```
+GET /v1/sim-suites/{suite_id}/runs/{run_id}
+```
+
+Returns a suite run with all child `SimulationRunResponse` objects and the `release_eval_verdict`.
+
+---
+
+## Cancel a Suite Run
+
+```
+POST /v1/sim-suites/{suite_id}/runs/{run_id}/cancel
+```
+
+Cancels all pending or running simulations in the suite run.
+
+---
+
+## Retry Failed Runs
+
+```
+POST /v1/sim-suites/{suite_id}/runs/{run_id}/retry-failed
+```
+
+Re-dispatches only the simulation runs that failed or errored in the original suite run.

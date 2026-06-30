@@ -1,0 +1,167 @@
+---
+title: "Policies: Control What Your Agents Can Say and Do"
+sidebarTitle: "Policies"
+description: "Policies are rules that run at defined enforcement points in every conversation turn. Use them to block, redact, append disclaimers, or require approval."
+---
+
+Policies are the guardrail system in Feather. Each policy defines a **check** — a condition evaluated at a specific point in a conversation turn — and an **action** to take when that condition is met. You can use policies to prevent harmful outputs, enforce compliance requirements, gate sensitive tool calls, or monitor agent behavior without blocking it.
+
+## What Is a Policy?
+
+A policy has three parts:
+
+1. **An enforcement point** — where in the turn lifecycle the check runs.
+2. **A check** — the condition that determines whether the policy fires.
+3. **An action** — what Feather does when the check returns a violation.
+
+Policies are created independently and attached to agent revisions via `policy_refs`. A single policy can be shared across multiple agent revisions.
+
+---
+
+## Enforcement Points
+
+Feather evaluates policies at four points in every conversation turn:
+
+<CardGroup cols={2}>
+  <Card title="input" icon="arrow-right-to-bracket">
+    Runs after the user's message is received but before the agent processes it. Use this point to screen incoming content — detect prompt injection, PII in user input, or prohibited topics.
+  </Card>
+  <Card title="pre_tool" icon="wrench">
+    Runs after the agent decides to call a tool but before the call is executed. Use this point to gate sensitive operations — approve before making a payment, block calls to restricted endpoints, or log high-risk actions.
+  </Card>
+  <Card title="post_tool" icon="wrench">
+    Runs after a tool call completes and the result is returned to the agent. Use this point to screen tool outputs before the agent uses them — catch sensitive data returned from APIs or flag unexpected results.
+  </Card>
+  <Card title="agent_response" icon="arrow-right-from-bracket">
+    Runs after the agent generates a response but before it is delivered to the end user. Use this point to check the final output — detect hallucinated claims, enforce tone guidelines, or append mandatory disclaimers.
+  </Card>
+</CardGroup>
+
+---
+
+## Check Types
+
+Each policy uses one of two check types to evaluate a potential violation:
+
+<AccordionGroup>
+  <Accordion title="expression">
+    A boolean rule evaluated against the current turn state. Expressions use a simple predicate syntax and can reference turn fields like `user_message`, `tool_name`, `tool_input`, `tool_output`, and `agent_response`.
+
+    **Examples:**
+    - `tool_name == "transfer_funds" AND tool_input.amount > 10000` — fire before high-value transfers
+    - `agent_response contains "guaranteed"` — fire when the agent makes guarantee-style claims
+    - `user_message matches_regex "\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b"` — fire on credit card numbers in user input
+
+    Expression checks are evaluated locally with no LLM call, making them fast and deterministic.
+  </Accordion>
+  <Accordion title="llm_judge">
+    A secondary LLM call that evaluates the turn against a `guardrail_text` you provide. The judge LLM returns a `violation: true/false` decision and an `explanation` string.
+
+    **Example `guardrail_text`:**
+    > "Evaluate whether the agent's response contains medical advice that could harm a patient if followed without professional consultation. Flag any response that recommends specific medications, dosages, or treatment plans."
+
+    LLM judge checks are more flexible than expressions and can catch nuanced semantic violations, but they add latency and token cost to each turn. Use them for checks that require genuine language understanding.
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  Combine `expression` and `llm_judge` checks using multiple policies at the same enforcement point. Fast expression checks catch obvious violations cheaply; LLM judge checks catch subtle ones. Feather evaluates all policies at a given enforcement point in parallel.
+</Tip>
+
+---
+
+## Actions
+
+When a policy fires, Feather takes the configured action:
+
+| Action | Description |
+|---|---|
+| `block` | Stops processing immediately. The agent's current operation is cancelled and a configurable `safe_message` is returned to the end user instead. |
+| `redact` | Removes the violating content from the turn. For `input` enforcement, the matched content is stripped from the user message before the agent sees it. For `agent_response`, the matched content is removed before delivery. |
+| `append` | Adds a `disclaimer_text` to the agent's response before delivery. The original response is preserved; the disclaimer is appended. Use this for legal notices or content advisories. |
+| `require_approval` | Pauses the conversation, sets status to `awaiting_approval`, and creates an approval request for a human reviewer. Processing resumes (or is blocked) based on the reviewer's decision. |
+| `handoff` | Immediately transfers the conversation to a human agent queue and sets status to `waiting_for_human`. Use this for situations that require human judgment rather than a simple block. |
+
+---
+
+## Modes
+
+Every policy runs in one of two modes:
+
+<CardGroup cols={2}>
+  <Card title="enforce" icon="shield">
+    The policy is live. When the check fires, Feather executes the configured action. Violations are logged with `enforcement_mode: enforce`.
+  </Card>
+  <Card title="monitor" icon="eye">
+    The policy runs silently. Feather evaluates the check and logs any violations, but takes no action. The conversation proceeds as if the policy did not fire. Use this mode to measure a policy's false-positive rate before enabling enforcement.
+  </Card>
+</CardGroup>
+
+<Note>
+  Switching a policy from `monitor` to `enforce` is a zero-downtime operation. The change takes effect on the next turn of any active conversation that references the policy — you do not need to create a new agent revision.
+</Note>
+
+---
+
+## Attaching Policies to Agent Revisions
+
+Attach one or more policies to an agent revision using:
+
+```bash
+PUT https://api-sandbox.featherhq.com/v1/agents/revisions/{revision_id}/policies
+```
+
+```json
+{
+  "policy_refs": [
+    { "policy_id": "pol_01abc123", "order": 1 },
+    { "policy_id": "pol_01def456", "order": 2 }
+  ]
+}
+```
+
+The `order` field controls evaluation priority when multiple policies share the same enforcement point. Lower numbers run first. If a `block` action fires, Feather skips remaining policies at that enforcement point.
+
+<Warning>
+  Policy evaluation order matters when mixing `block` and `append` actions at the same enforcement point. A policy with a `block` action that fires early will prevent any subsequent `append` policies from running. Plan your ordering intentionally.
+</Warning>
+
+---
+
+## Org-Wide Enforcement
+
+In addition to per-revision policy attachment, Feather lets you define **org-wide policies** that apply to every conversation across all agents in your organization, regardless of which policies are attached to a specific revision.
+
+Org-wide policies are configured in the Feather dashboard under **Settings → Policies → Organization Defaults**. They run at the same enforcement points as revision-level policies and support the same check types and actions.
+
+Use org-wide policies for absolute guardrails — rules that must never be violated regardless of how individual agents are configured. Common examples include PII redaction, regulated-industry disclaimers, and prohibited content filters.
+
+<Warning>
+  Org-wide policies cannot be overridden by revision-level policy configuration. If an org-wide policy blocks a response, no revision-level `append` or downstream action will run. Make sure your org-wide policies reflect intent that is truly universal across all agents.
+</Warning>
+
+---
+
+## Violation Logs
+
+Every policy evaluation — whether it fires or not — is recorded in Feather's violation log. Each log entry includes:
+
+- `policy_id` and `policy_name`
+- `enforcement_point` — where in the turn the check ran
+- `fired` — whether the check returned a violation
+- `action_taken` — the action Feather executed (or `none` in `monitor` mode)
+- `enforcement_mode` — `enforce` or `monitor`
+- `explanation` — populated by the LLM judge if `check_type` is `llm_judge`
+- `conversation_id` and `turn_id` — for correlation with conversation history
+
+Use the violation log to tune check expressions, measure LLM judge accuracy, and demonstrate compliance to auditors.
+
+---
+
+## Next Steps
+
+<CardGroup cols={1}>
+  <Card title="Policies API Reference" icon="code" href="/api-reference/policies/overview">
+    Full reference for policy CRUD, revision attachment, org-wide policy management, and violation log endpoints.
+  </Card>
+</CardGroup>

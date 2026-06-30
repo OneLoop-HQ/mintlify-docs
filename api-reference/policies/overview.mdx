@@ -1,0 +1,266 @@
+---
+title: "Policies API: Define Content and Behavior Rules"
+sidebarTitle: "Policies"
+description: "Create policies with expression or LLM judge checks at input, tool, and response enforcement points. Control what agents can say and do."
+---
+
+## Overview
+
+Policies are rules that Feather evaluates at specific points in an agent's execution pipeline. Each policy defines:
+
+- **What to check** — an expression or LLM judge evaluation.
+- **Where to check** — input, before/after tool calls, or the agent's final response.
+- **What to do on a match** — block, redact, append content, require human approval, or hand off.
+- **How to behave on error** — fail open (allow) or fail closed (block).
+
+Policies can be scoped to your entire organization or made `attachable` for selective use on individual agents.
+
+---
+
+## Create a Policy
+
+```
+POST /v1/policies
+```
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Human-readable policy name.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Explains what the policy enforces and why.
+</ParamField>
+
+<ParamField body="enabled" type="boolean" required>
+  Whether the policy is active. Set to `false` to create a policy without activating it.
+</ParamField>
+
+<ParamField body="scope" type="string" required>
+  - `attachable` — Must be explicitly attached to an agent.
+  - `organization` — Applies to all agents in the organization automatically.
+</ParamField>
+
+<ParamField body="check_type" type="string" required>
+  - `expression` — Evaluated with the Feather expression DSL against structured content fields.
+  - `llm_judge` — Sends content to a language model for semantic evaluation.
+</ParamField>
+
+<ParamField body="check_config" type="object" required>
+  Configuration for the check. For `llm_judge`, include a `prompt` field describing the evaluation criteria. For `expression`, include an `expression` string.
+</ParamField>
+
+<ParamField body="enforcement_point" type="string" required>
+  When in the pipeline to apply this policy:
+  - `input` — Evaluate user input before any agent processing.
+  - `pre_tool` — Evaluate before a tool call is made.
+  - `post_tool` — Evaluate after a tool returns a result.
+  - `agent_response` — Evaluate the agent's outbound response before it is sent.
+</ParamField>
+
+<ParamField body="action" type="string" required>
+  Action taken when the policy check triggers:
+  - `block` — Stop the pipeline and return an error or fallback message.
+  - `redact` — Scrub matched content and continue.
+  - `append` — Append a disclosure or additional content to the message.
+  - `require_approval` — Pause for human review before continuing.
+  - `handoff` — Transfer the conversation to a human agent.
+</ParamField>
+
+<ParamField body="action_config" type="object">
+  Additional configuration for the action. For example, a `block` action can include a `fallback_message` to return to the user.
+</ParamField>
+
+<ParamField body="tool_target" type="string">
+  Scope this policy to a specific tool. Format: `api:<tool_uuid>`. Only relevant for `pre_tool` and `post_tool` enforcement points.
+</ParamField>
+
+<ParamField body="mode" type="string" required>
+  - `enforce` — The action is taken when the check triggers.
+  - `monitor` — The check runs and logs results, but no action is taken.
+</ParamField>
+
+<ParamField body="on_error" type="string" required>
+  Behavior when the policy evaluation itself errors:
+  - `fail_open` — Treat as a pass; the pipeline continues.
+  - `fail_closed` — Treat as a failure; the configured action is taken.
+</ParamField>
+
+<ParamField body="timeout_ms" type="integer">
+  Maximum milliseconds to wait for a policy evaluation before triggering `on_error`. Default is 5000.
+</ParamField>
+
+<ParamField body="strictness" type="string">
+  For `llm_judge` checks: `strict` (require high confidence) or `relaxed` (flag on low confidence).
+</ParamField>
+
+<ParamField body="priority" type="integer">
+  Evaluation order when multiple policies apply at the same enforcement point. Lower values run first.
+</ParamField>
+
+---
+
+## List Policies
+
+```
+GET /v1/policies
+```
+
+### Query Parameters
+
+<ParamField query="cursor" type="string">
+  Pagination cursor from the previous response.
+</ParamField>
+
+---
+
+## Get a Policy
+
+```
+GET /v1/policies/{id}
+```
+
+Returns the policy record including its `active_revision` object.
+
+---
+
+## Update a Policy
+
+```
+PUT /v1/policies/{id}
+```
+
+Updates the policy's identity fields (`name`, `description`, `enabled`, `scope`). To update check logic or action configuration, create a new [policy revision](/api-reference/policies/revisions).
+
+---
+
+## Delete a Policy
+
+```
+DELETE /v1/policies/{id}
+```
+
+Permanently removes the policy and all its revisions.
+
+---
+
+## Organization-Wide Enforcement Switch
+
+```
+GET /v1/policies/enforcement
+PUT /v1/policies/enforcement
+```
+
+A master switch that enables or disables all policy enforcement for your organization. When disabled, no policies run — even those marked `enforce`.
+
+<Warning>
+  Disabling organization-wide enforcement bypasses all content and safety policies. Use only in development or for emergency troubleshooting.
+</Warning>
+
+### Request Body (PUT)
+
+<ParamField body="enabled" type="boolean" required>
+  `true` to enable enforcement globally, `false` to disable.
+</ParamField>
+
+---
+
+## Judge Model Configuration
+
+```
+GET /v1/policies/judge-model
+PUT /v1/policies/judge-model
+```
+
+Sets the LLM used for all `llm_judge` policy checks that don't have a per-policy override.
+
+### Request Body (PUT)
+
+<ParamField body="model_settings" type="object" required>
+  Contains:
+  - `model` (string) — Model identifier, e.g. `gpt-4o`.
+  - `config` (object) — Model config including `temperature`, `max_tokens`, etc.
+</ParamField>
+
+---
+
+## Policy Evaluations Audit Log
+
+```
+GET /v1/policies/evaluations
+```
+
+Returns a log of individual policy evaluation events. Useful for auditing policy behavior and debugging unexpected blocks.
+
+### Query Parameters
+
+<ParamField query="conversation_id" type="string">
+  Filter to evaluations within a specific conversation.
+</ParamField>
+
+<ParamField query="policy_id" type="string">
+  Filter to a specific policy.
+</ParamField>
+
+<ParamField query="result" type="string">
+  One of `pass`, `fail`, `error`, `skipped`.
+</ParamField>
+
+<ParamField query="enforcement_point" type="string">
+  One of `input`, `pre_tool`, `post_tool`, `agent_response`.
+</ParamField>
+
+---
+
+## Expression Schema
+
+```
+GET /v1/policies/expression-schema
+```
+
+Returns the complete DSL reference for building `expression` checks: available predicates, logical operators, common fields, and which content paths are accessible at each enforcement point. See [Policy Enforcement](/api-reference/policies/enforcement) for details.
+
+---
+
+## Example: Monitor-Mode LLM Judge Policy
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/policies \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "No Legal Advice",
+    "description": "Detects agent responses that may constitute legal advice.",
+    "enabled": true,
+    "scope": "organization",
+    "check_type": "llm_judge",
+    "check_config": {
+      "prompt": "Does this response give specific legal advice or recommend a legal strategy to the user? Respond YES or NO."
+    },
+    "enforcement_point": "agent_response",
+    "action": "require_approval",
+    "action_config": {},
+    "mode": "monitor",
+    "on_error": "fail_open",
+    "timeout_ms": 5000,
+    "strictness": "relaxed",
+    "priority": 10
+  }'
+```
+
+```json Response
+{
+  "id": "pol_ab12cd34-0000-0000-0000-000000000020",
+  "name": "No Legal Advice",
+  "scope": "organization",
+  "check_type": "llm_judge",
+  "enforcement_point": "agent_response",
+  "action": "require_approval",
+  "mode": "monitor",
+  "enabled": true,
+  "created_at": "2024-06-01T11:00:00Z"
+}
+```
+</CodeGroup>

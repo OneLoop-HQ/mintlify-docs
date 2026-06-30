@@ -1,0 +1,327 @@
+---
+title: "Custom MCP Servers: Connect Your Own Tools via MCP"
+sidebarTitle: "Custom MCP"
+description: "Connect your own Model Context Protocol server to Feather using static credentials, Bearer tokens, API keys, or OAuth. Agents can call any MCP tool."
+---
+
+## Overview
+
+Feather supports connecting any [Model Context Protocol (MCP)](https://modelcontextprotocol.io) compatible server as an integration. Once connected, all MCP tools exposed by your server are available to agents automatically. This lets you build custom internal tooling and plug it directly into Feather without writing a Feather-specific API tool for each action.
+
+**Base URL:** `https://api-sandbox.featherhq.com`
+
+---
+
+## Supported Auth Types
+
+| `auth_type` | Description |
+|---|---|
+| `none` | No authentication |
+| `bearer` | Static Bearer token in the `Authorization` header |
+| `api_key` | API key in a configurable header (default: `X-Api-Key`) |
+| `oauth` | OAuth 2.0 with Dynamic Client Registration (DCR) or static credentials |
+
+---
+
+## Discover Server Capabilities
+
+Before connecting, probe the MCP server to check whether it supports Dynamic Client Registration (DCR) and retrieve its OAuth endpoints.
+
+```
+POST /v1/integrations/connections/custom-mcp/discover
+```
+
+<ParamField body="server_url" type="string" required>
+  The base URL of your MCP server, e.g. `https://mcp.example.com`.
+</ParamField>
+
+### Response
+
+<ResponseField name="supports_dcr" type="boolean">
+  Whether the server advertises support for OAuth Dynamic Client Registration. When `true`, Feather will register itself automatically during the connection flow.
+</ResponseField>
+
+<ResponseField name="authorize_url" type="string">
+  The OAuth authorization endpoint. Present only when the server uses OAuth.
+</ResponseField>
+
+<ResponseField name="token_url" type="string">
+  The OAuth token endpoint. Present only when the server uses OAuth.
+</ResponseField>
+
+<ResponseField name="scopes" type="string[]">
+  List of OAuth scopes advertised by the server.
+</ResponseField>
+
+<Tip>
+  Always run discovery before connecting. If `supports_dcr` is `true`, you can omit `oauth_client_id` and `oauth_client_secret` when creating the connection — Feather handles registration automatically.
+</Tip>
+
+---
+
+## Connect a Custom MCP Server
+
+```
+POST /v1/integrations/connections/custom-mcp
+```
+
+<ParamField body="nickname" type="string" required>
+  A human-friendly name for this connection, e.g. `"Internal CRM MCP"`.
+</ParamField>
+
+<ParamField body="server_url" type="string" required>
+  The base URL of the MCP server.
+</ParamField>
+
+<ParamField body="transport" type="string" required>
+  Transport protocol: `sse` (Server-Sent Events, HTTP-based) or `stdio` (standard I/O, for local servers).
+</ParamField>
+
+<ParamField body="auth_type" type="string" required>
+  Authentication method: `none`, `bearer`, `api_key`, or `oauth`.
+</ParamField>
+
+<ParamField body="token" type="string">
+  **(Required when `auth_type: bearer`)** The static Bearer token to include in `Authorization: Bearer <token>`.
+</ParamField>
+
+<ParamField body="api_key" type="string">
+  **(Required when `auth_type: api_key`)** The API key value.
+</ParamField>
+
+<ParamField body="api_key_header" type="string" default="X-Api-Key">
+  **(Optional, `auth_type: api_key`)** The header name to send the API key in.
+</ParamField>
+
+<ParamField body="headers" type="object">
+  Additional static headers to include in every request to the MCP server. Key-value pairs.
+
+  ```json
+  {
+    "X-Tenant-Id": "tenant_abc123",
+    "X-Environment": "production"
+  }
+  ```
+</ParamField>
+
+<ParamField body="oauth_authorize_url" type="string">
+  **(Required when `auth_type: oauth` and `supports_dcr: false`)** The OAuth authorization endpoint.
+</ParamField>
+
+<ParamField body="oauth_token_url" type="string">
+  **(Required when `auth_type: oauth` and `supports_dcr: false`)** The OAuth token endpoint.
+</ParamField>
+
+<ParamField body="oauth_client_id" type="string">
+  OAuth client ID. Required when `supports_dcr` is `false`. Omit when DCR is supported.
+</ParamField>
+
+<ParamField body="oauth_client_secret" type="string">
+  OAuth client secret. Required when `supports_dcr` is `false`. Stored encrypted and never returned.
+</ParamField>
+
+<ParamField body="oauth_scopes" type="string[]">
+  OAuth scopes to request during authorisation.
+</ParamField>
+
+### Response
+
+<ResponseField name="connection_id" type="string">
+  ID of the newly created connection.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `active` for `none`, `bearer`, or `api_key` auth. `pending_oauth` when the OAuth flow must be completed.
+</ResponseField>
+
+<ResponseField name="vendor" type="string">
+  Always `custom_mcp` for connections created through this endpoint.
+</ResponseField>
+
+<ResponseField name="authorize_url" type="string">
+  Present when `status` is `pending_oauth`. Open this URL in a browser popup to authorise Feather's access.
+</ResponseField>
+
+---
+
+## Test an MCP Tool
+
+Once connected, you can test individual MCP tools directly without running an agent conversation.
+
+```
+POST /v1/integrations/connections/{id}/test-mcp-call
+```
+
+<ParamField path="id" type="string" required>
+  The MCP connection ID.
+</ParamField>
+
+<ParamField body="slug" type="string" required>
+  The slug of the MCP tool to call, e.g. `search_contacts`.
+</ParamField>
+
+<ParamField body="input" type="object" required>
+  Input parameters matching the tool's schema.
+
+  ```json
+  {
+    "query": "Acme Corp",
+    "limit": 5
+  }
+  ```
+</ParamField>
+
+### Response
+
+<ResponseField name="result" type="object">
+  The raw result returned by the MCP tool.
+</ResponseField>
+
+<ResponseField name="success" type="boolean">
+  Whether the tool call completed without error.
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message if `success` is `false`.
+</ResponseField>
+
+<ResponseField name="execution_time_ms" type="integer">
+  Time taken for the MCP tool call in milliseconds.
+</ResponseField>
+
+---
+
+## Full Example: Connect with Bearer Auth and Test a Tool
+
+### Step 1 — Discover capabilities
+
+<CodeGroup>
+
+```bash Discover
+curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp/discover \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "server_url": "https://mcp.internal.example.com"
+  }'
+```
+
+</CodeGroup>
+
+```json
+{
+  "supports_dcr": false,
+  "authorize_url": null,
+  "token_url": null,
+  "scopes": []
+}
+```
+
+The server doesn't use OAuth, so we'll use `bearer` auth.
+
+### Step 2 — Create the connection
+
+<CodeGroup>
+
+```bash Connect
+curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nickname": "Internal CRM MCP",
+    "server_url": "https://mcp.internal.example.com",
+    "transport": "sse",
+    "auth_type": "bearer",
+    "token": "srv_token_abc123xyz",
+    "headers": {
+      "X-Environment": "production"
+    }
+  }'
+```
+
+</CodeGroup>
+
+```json
+{
+  "connection_id": "conn_mcp_4f2a8b1c",
+  "status": "active",
+  "vendor": "custom_mcp",
+  "authorize_url": null
+}
+```
+
+### Step 3 — Test a tool
+
+<CodeGroup>
+
+```bash Test MCP tool
+curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/conn_mcp_4f2a8b1c/test-mcp-call \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "search_contacts",
+    "input": {
+      "query": "Acme Corp",
+      "limit": 3
+    }
+  }'
+```
+
+</CodeGroup>
+
+```json
+{
+  "result": {
+    "contacts": [
+      { "id": "c_001", "name": "Alice Johnson", "company": "Acme Corp" },
+      { "id": "c_002", "name": "Bob Martinez", "company": "Acme Corp" }
+    ],
+    "total": 2
+  },
+  "success": true,
+  "error": null,
+  "execution_time_ms": 145
+}
+```
+
+---
+
+## OAuth Connection Example
+
+When connecting an MCP server that requires OAuth (without DCR):
+
+<CodeGroup>
+
+```bash Connect with OAuth
+curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nickname": "Partner API MCP",
+    "server_url": "https://partner-api.example.com/mcp",
+    "transport": "sse",
+    "auth_type": "oauth",
+    "oauth_authorize_url": "https://auth.example.com/oauth/authorize",
+    "oauth_token_url": "https://auth.example.com/oauth/token",
+    "oauth_client_id": "client_feather_abc",
+    "oauth_client_secret": "secret_xyz789",
+    "oauth_scopes": ["tools:read", "tools:execute"]
+  }'
+```
+
+</CodeGroup>
+
+```json
+{
+  "connection_id": "conn_mcp_9c3d5e2f",
+  "status": "pending_oauth",
+  "vendor": "custom_mcp",
+  "authorize_url": "https://auth.example.com/oauth/authorize?client_id=client_feather_abc&..."
+}
+```
+
+Open `authorize_url` in a browser popup. After the user grants access, call `POST /v1/integrations/connections/conn_mcp_9c3d5e2f/finalize` to complete the flow.
+
+<Warning>
+  `oauth_client_secret` is write-only and encrypted at rest. It is never returned in GET responses. Store it securely before sending it to Feather.
+</Warning>

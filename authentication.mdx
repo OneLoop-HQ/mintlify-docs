@@ -1,0 +1,232 @@
+---
+title: Authenticate Requests to the Feather Platform API
+sidebarTitle: Authentication
+description: Create and manage API keys for the Feather CX Platform. Pass your key in the x-api-key header or as a Bearer token on every request.
+---
+
+Feather authenticates every API request using API keys that you create and manage inside your organization. There are no session cookies or OAuth flows required — include your key on every request and Feather verifies your identity, organization membership, and permission scopes automatically.
+
+## Authentication Methods
+
+Feather supports two ways to pass your key on each request. Both are accepted on every endpoint; use whichever fits your stack best.
+
+### API Key Header (Preferred)
+
+Pass the key in the `x-api-key` request header. This is the recommended approach because it is unambiguous and works seamlessly with API gateways and proxies that strip or rewrite `Authorization` headers.
+
+<CodeGroup>
+
+```bash x-api-key Header
+curl https://api-sandbox.featherhq.com/v1/identity/whoami \
+  -H 'x-api-key: fth_live_xxxxxxxxxxxxxxxxxxxx'
+```
+
+</CodeGroup>
+
+### Bearer Token
+
+Pass the key as a standard `Authorization: Bearer` header. Use this method when you are working with an HTTP client or framework that expects OAuth-style credentials.
+
+<CodeGroup>
+
+```bash Bearer Token
+curl https://api-sandbox.featherhq.com/v1/identity/whoami \
+  -H 'Authorization: Bearer fth_live_xxxxxxxxxxxxxxxxxxxx'
+```
+
+</CodeGroup>
+
+<Tip>
+  API keys do not expire by default. If you need time-bounded access — for
+  example for a contractor or a CI pipeline — set the `expires_at` field when
+  you create the key.
+</Tip>
+
+---
+
+## Creating an API Key
+
+Call `POST /v1/identity/api-keys` to create a new key. You can optionally assign a list of permission `scopes` and an expiry date.
+
+<Warning>
+  The `plain_text_key` value is returned **only once**, at creation time. Copy
+  it to a secure secret store immediately. Feather never exposes the full key
+  again — you can only see its prefix afterward.
+</Warning>
+
+<Steps>
+  <Step title="Send the creation request">
+    POST to `/v1/identity/api-keys` with a JSON body that includes a human-readable `name`. Add `scopes` and `expires_at` if needed.
+
+    <CodeGroup>
+
+    ```bash Create API Key
+    curl -X POST https://api-sandbox.featherhq.com/v1/identity/api-keys \
+      -H 'x-api-key: fth_live_xxxxxxxxxxxxxxxxxxxx' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "name": "my-app-key",
+        "scopes": ["conversations:read", "conversations:write", "agents:read"],
+        "expires_at": "2026-01-01T00:00:00Z"
+      }'
+    ```
+
+    </CodeGroup>
+
+  </Step>
+  <Step title="Store the plain-text key immediately">
+    The response includes a `plain_text_key` field containing the full secret. Save it to your environment variables or secrets manager before you close the response.
+
+    ```json Response (201 Created)
+    {
+      "id": "ak_01hwqz3k9fmxp7v2brgnte8cja",
+      "name": "my-app-key",
+      "plain_text_key": "fth_live_4T8zQrVnLwJpKsYdXcMbUeAoHiFgNt",
+      "key_prefix": "fth_live_4T8z",
+      "scopes": ["conversations:read", "conversations:write", "agents:read"],
+      "is_active": true,
+      "last_used_at": null,
+      "expires_at": "2026-01-01T00:00:00Z",
+      "created_at": "2025-01-15T10:32:00Z"
+    }
+    ```
+
+  </Step>
+</Steps>
+
+### Request Body Fields
+
+<ParamField body="name" type="string" required>
+  A human-readable label for the key. Useful for identifying which application or team member owns it.
+</ParamField>
+
+<ParamField body="scopes" type="string[]">
+  An optional list of permission scopes that limit what the key can do. Omitting this field grants the key all permissions available to your organization role.
+</ParamField>
+
+<ParamField body="expires_at" type="string (ISO 8601)">
+  An optional expiry timestamp in ISO 8601 format (e.g. `2026-01-01T00:00:00Z`). The key becomes inactive after this time. Omit to create a non-expiring key.
+</ParamField>
+
+### API Key Response Schema
+
+<ResponseField name="id" type="string (UUID)">
+  Unique identifier for the API key. Use this to list or revoke the key later.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The human-readable label you provided at creation.
+</ResponseField>
+
+<ResponseField name="plain_text_key" type="string">
+  The full secret key value. **Present only in the creation response.** Store it immediately — Feather will never return it again.
+</ResponseField>
+
+<ResponseField name="key_prefix" type="string">
+  The first few characters of the key (e.g. `fth_live_4T8z`). Shown in listing endpoints so you can identify which key is which without exposing the full secret.
+</ResponseField>
+
+<ResponseField name="scopes" type="string[]">
+  The permission scopes assigned to this key.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  `true` while the key is usable. Becomes `false` after the key is revoked or its `expires_at` time has passed.
+</ResponseField>
+
+<ResponseField name="last_used_at" type="string (ISO 8601) | null">
+  The timestamp of the most recent authenticated request made with this key. `null` if the key has never been used.
+</ResponseField>
+
+<ResponseField name="expires_at" type="string (ISO 8601) | null">
+  The expiry time you set at creation, or `null` if the key has no expiry.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  The timestamp when the key was created.
+</ResponseField>
+
+---
+
+## Listing and Revoking Keys
+
+### List All Keys
+
+Retrieve all active API keys in your organization. The response includes `key_prefix` so you can identify each key without exposing the full secret.
+
+<CodeGroup>
+
+```bash List API Keys
+curl https://api-sandbox.featherhq.com/v1/identity/api-keys \
+  -H 'x-api-key: fth_live_xxxxxxxxxxxxxxxxxxxx'
+```
+
+</CodeGroup>
+
+```json Response (200 OK)
+{
+  "data": [
+    {
+      "id": "ak_01hwqz3k9fmxp7v2brgnte8cja",
+      "name": "my-app-key",
+      "key_prefix": "fth_live_4T8z",
+      "scopes": ["conversations:read", "conversations:write", "agents:read"],
+      "is_active": true,
+      "last_used_at": "2025-01-20T08:14:32Z",
+      "expires_at": "2026-01-01T00:00:00Z",
+      "created_at": "2025-01-15T10:32:00Z"
+    },
+    {
+      "id": "ak_01hx4m8rtnbqe0wjyp5vugc3sf",
+      "name": "ci-pipeline",
+      "key_prefix": "fth_live_9Kc2",
+      "scopes": ["agents:read"],
+      "is_active": true,
+      "last_used_at": "2025-01-21T03:00:11Z",
+      "expires_at": null,
+      "created_at": "2025-01-10T09:00:00Z"
+    }
+  ]
+}
+```
+
+### Revoke a Key
+
+Send a `DELETE` request with the key's `id` to permanently revoke it. Revocation is immediate — any in-flight request using that key after this point will receive a `401` error.
+
+<CodeGroup>
+
+```bash Revoke API Key
+curl -X DELETE https://api-sandbox.featherhq.com/v1/identity/api-keys/ak_01hwqz3k9fmxp7v2brgnte8cja \
+  -H 'x-api-key: fth_live_xxxxxxxxxxxxxxxxxxxx'
+```
+
+</CodeGroup>
+
+A successful revocation returns `204 No Content` with an empty response body.
+
+---
+
+## Error Responses
+
+### 401 — Authentication Required
+
+Returned when the API key is missing, malformed, revoked, or expired.
+
+```json 401 Authentication Required
+{
+  "error": "authentication_required",
+  "message": "No valid API key was provided. Pass your key in the x-api-key header or as a Bearer token."
+}
+```
+
+### 400 — Bad Request
+
+Returned when the request body is missing required fields or contains an invalid value (for example, a malformed `expires_at` timestamp).
+
+```json 400 Bad Request
+{
+  "error": "bad_request",
+  "message": "The value provided for 'expires_at' is not a valid ISO 8601 datetime string."
+}
+```

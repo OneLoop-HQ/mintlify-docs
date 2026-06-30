@@ -1,0 +1,319 @@
+---
+title: "Email Drafts: Author and Approve Outbound Emails"
+sidebarTitle: "Email Drafts"
+description: "Create human-only email drafts, edit them before sending, approve to dispatch, or discard. Full HITL approval workflow for outbound email."
+---
+
+## Overview
+
+Email drafts support a human-in-the-loop (HITL) approval workflow. A draft is created in `draft` status, edited as needed, then explicitly approved to dispatch. At every stage the draft can be discarded. This gives your team full control over outbound email before anything reaches the recipient.
+
+**Typical workflow:**
+
+```
+Create draft → (Edit as needed) → Approve → Sent
+                                         ↘ Discard
+```
+
+---
+
+## Create a Draft
+
+```
+POST /v1/email/drafts
+```
+
+Creates a new email draft in `draft` status. The draft is not sent until you call the [Approve](#approve-a-draft) endpoint.
+
+### Request Body
+
+<ParamField body="session_id" type="string (uuid)" required>
+  The Feather session this email belongs to.
+</ParamField>
+
+<ParamField body="account_id" type="string (uuid)" required>
+  The mailbox account (`id` from `GET /v1/email/accounts`) to send from.
+</ParamField>
+
+<ParamField body="agent_id" type="string (uuid)">
+  Agent authoring the draft. If omitted, the mailbox's bound agent is used.
+</ParamField>
+
+<ParamField body="mode" type="string" required>
+  Authoring mode. Currently `human_only` — the draft must be reviewed and approved by a human before dispatch.
+</ParamField>
+
+<ParamField body="in_reply_to_turn_id" type="string (uuid)">
+  Thread this draft as a reply to an existing conversation turn. When set, Feather populates the `In-Reply-To` and `References` headers automatically.
+</ParamField>
+
+<ParamField body="subject" type="string" required>
+  Email subject line.
+</ParamField>
+
+<ParamField body="body_html" type="string" required>
+  Full HTML body of the email.
+</ParamField>
+
+<ParamField body="body_text" type="string">
+  Plain-text fallback body. Recommended for accessibility and deliverability. If omitted, Feather strips HTML tags to generate a plain-text version automatically.
+</ParamField>
+
+<ParamField body="to" type="array of objects" required>
+  Primary recipients. Each entry has:
+
+  - `address` (string, required) — Email address.
+  - `name` (string) — Display name.
+</ParamField>
+
+<ParamField body="cc" type="array of objects">
+  CC recipients. Same structure as `to`.
+</ParamField>
+
+<ParamField body="bcc" type="array of objects">
+  BCC recipients. Same structure as `to`. Addresses are never exposed to other recipients.
+</ParamField>
+
+<ParamField body="reply_to" type="array of objects">
+  Override reply-to addresses. Same structure as `to`.
+</ParamField>
+
+### Response
+
+Returns a [DraftResponse](#draftresponse).
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/email/drafts \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "sess_9f3e2a1b-0000-0000-0000-000000000042",
+    "account_id": "mbox_1a2b3c4d-0000-0000-0000-000000000010",
+    "mode": "human_only",
+    "subject": "Re: Your refund request #4821",
+    "body_html": "<p>Hi Jane,</p><p>Your refund has been approved.</p>",
+    "to": [
+      { "address": "jane@example.com", "name": "Jane Smith" }
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "drft_7e2c1a0b-0000-0000-0000-000000000033",
+  "status": "draft",
+  "approval_state": "pending",
+  "subject": "Re: Your refund request #4821",
+  "created_at": "2024-06-01T10:05:00Z",
+  "updated_at": "2024-06-01T10:05:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+## List Drafts
+
+```
+GET /v1/email/drafts
+```
+
+Returns a paginated list of email drafts, optionally filtered.
+
+### Query Parameters
+
+<ParamField query="session_id" type="string (uuid)">
+  Filter to drafts belonging to a specific session.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by draft status. One of `draft`, `submitted`, `sending`, `sent`, `failed`, `discarded`.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor returned in the previous response.
+</ParamField>
+
+---
+
+## Get a Draft
+
+```
+GET /v1/email/drafts/{id}
+```
+
+Returns a single draft by ID.
+
+---
+
+## Edit a Draft
+
+```
+PATCH /v1/email/drafts/{id}
+```
+
+Updates subject, body, or recipients. Only drafts in `draft` status can be edited — attempting to modify a `sent` or `discarded` draft returns `409 Conflict`.
+
+### Request Body
+
+<ParamField body="subject" type="string">
+  Updated subject line.
+</ParamField>
+
+<ParamField body="body_html" type="string">
+  Updated HTML body.
+</ParamField>
+
+<ParamField body="body_text" type="string">
+  Updated plain-text body.
+</ParamField>
+
+<ParamField body="to" type="array of objects">
+  Replace all primary recipients.
+</ParamField>
+
+<ParamField body="cc" type="array of objects">
+  Replace all CC recipients.
+</ParamField>
+
+<ParamField body="bcc" type="array of objects">
+  Replace all BCC recipients.
+</ParamField>
+
+<ParamField body="reply_to" type="array of objects">
+  Replace reply-to addresses.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X PATCH https://api-sandbox.featherhq.com/v1/email/drafts/drft_7e2c1a0b-0000-0000-0000-000000000033 \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Re: Your refund request #4821 [Updated]",
+    "body_html": "<p>Hi Jane,</p><p>Your refund of $49.99 has been processed. Please allow 3–5 business days.</p>"
+  }'
+```
+</CodeGroup>
+
+---
+
+## Approve a Draft
+
+```
+POST /v1/email/drafts/{id}/approve
+```
+
+Dispatches the draft immediately. Transitions status from `draft` → `submitted` → `sending` → `sent`. On delivery failure the status becomes `failed`.
+
+<Note>
+  Once approved, a draft cannot be edited or discarded. Always review the draft content before calling this endpoint.
+</Note>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/email/drafts/drft_7e2c1a0b-0000-0000-0000-000000000033/approve \
+  -H "x-api-key: <key>"
+```
+
+```json Response
+{
+  "id": "drft_7e2c1a0b-0000-0000-0000-000000000033",
+  "status": "submitted",
+  "approval_state": "approved",
+  "approved_at": "2024-06-01T10:12:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+## Discard a Draft
+
+```
+DELETE /v1/email/drafts/{id}
+```
+
+Soft-discards a draft. The record is preserved for audit purposes but the email is never sent. Only drafts in `draft` status can be discarded.
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api-sandbox.featherhq.com/v1/email/drafts/drft_7e2c1a0b-0000-0000-0000-000000000033 \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## DraftResponse
+
+<ResponseField name="id" type="string">
+  Unique draft identifier.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Delivery lifecycle state:
+
+  | Value | Meaning |
+  |---|---|
+  | `draft` | Created, awaiting approval |
+  | `submitted` | Approved, queued for sending |
+  | `sending` | In transit via the mailbox provider |
+  | `sent` | Successfully delivered |
+  | `failed` | Delivery failed — see `error_detail` |
+  | `discarded` | Soft-deleted before sending |
+</ResponseField>
+
+<ResponseField name="approval_state" type="string">
+  HITL approval status. One of `pending`, `approved`, `discarded`.
+</ResponseField>
+
+<ResponseField name="evidence_snapshot" type="object">
+  Immutable snapshot of the draft content at approval time, used for compliance audit. Present only after approval.
+</ResponseField>
+
+<ResponseField name="subject" type="string">
+  Email subject line.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  Timestamp when the draft was created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string (ISO 8601)">
+  Timestamp of the most recent update.
+</ResponseField>
+
+---
+
+## Full Workflow Example
+
+<CodeGroup>
+```bash 1 - Create Draft
+curl -X POST https://api-sandbox.featherhq.com/v1/email/drafts \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"sess_...","account_id":"mbox_...","mode":"human_only","subject":"Hello","body_html":"<p>Hi!</p>","to":[{"address":"user@example.com"}]}'
+```
+
+```bash 2 - Edit Subject
+curl -X PATCH https://api-sandbox.featherhq.com/v1/email/drafts/drft_... \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"Hello — updated"}'
+```
+
+```bash 3 - Approve and Send
+curl -X POST https://api-sandbox.featherhq.com/v1/email/drafts/drft_.../approve \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>

@@ -1,0 +1,348 @@
+---
+title: "Stream Conversation Turns with Server-Sent Events"
+sidebarTitle: "Streaming"
+description: "Use the streaming turns endpoint to receive token-by-token responses. Supports delta events, tool call notifications, and a final complete event."
+---
+
+The streaming endpoint delivers the agent's response **token-by-token** over a [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) connection. This lets you begin rendering the response in your UI before the full text is generated, dramatically reducing perceived latency.
+
+---
+
+## Stream a Turn
+
+```
+POST https://api-sandbox.featherhq.com/v1/v2/conversations/{id}/turns/stream
+```
+
+Accepts the same body as [POST /turns](/api-reference/conversations/turns) and returns an `text/event-stream` response.
+
+<ParamField path="id" type="string" required>
+  Conversation ID.
+</ParamField>
+
+<ParamField query="trace" type="boolean">
+  Set `trace=true` to include per-turn reasoning trace steps interleaved in the stream. Useful for debugging agent behaviour in development. Defaults to `false`.
+</ParamField>
+
+### Request Body
+
+<ParamField body="user_message" type="string" required>
+  The end user's message text.
+</ParamField>
+
+<ParamField body="for_update" type="boolean">
+  If `true`, the response is not persisted to the transcript. Defaults to `false`.
+</ParamField>
+
+<ParamField body="include_evidence" type="boolean">
+  If `true`, knowledge-base evidence is included in the final `complete` event. Defaults to `false`.
+</ParamField>
+
+<ParamField body="evidence_view" type="string">
+  `compact` or `full`. Controls evidence detail in the `complete` event. Requires `include_evidence: true`.
+</ParamField>
+
+---
+
+## SSE Event Types
+
+The stream emits a sequence of `data:` lines, each containing a JSON object with a `type` field.
+
+### `delta` — Text Token
+
+Emitted once per token (or small chunk) as the agent generates its response.
+
+```
+data: {"type": "delta", "text": "Hello"}
+data: {"type": "delta", "text": ", how"}
+data: {"type": "delta", "text": " can I help?"}
+```
+
+<ResponseField name="type" type="string">
+  Always `"delta"`.
+</ResponseField>
+
+<ResponseField name="text" type="string">
+  The token or text fragment. Concatenating all `delta` texts produces the full agent response.
+</ResponseField>
+
+### `tool_call` — Tool Invocation Notification
+
+Emitted when the agent calls a tool mid-response. The stream may pause while the tool runs.
+
+```
+data: {"type": "tool_call", "tool_name": "lookup_account", "status": "running"}
+data: {"type": "tool_call", "tool_name": "lookup_account", "status": "completed"}
+```
+
+<ResponseField name="type" type="string">
+  Always `"tool_call"`.
+</ResponseField>
+
+<ResponseField name="tool_name" type="string">
+  Name of the tool being invoked.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `running` when the call starts; `completed` or `failed` when it finishes.
+</ResponseField>
+
+### `trace` — Reasoning Trace Step
+
+Only emitted when `trace=true` is set on the query string. Contains a single reasoning step from the agent's internal chain-of-thought.
+
+```
+data: {"type": "trace", "step": "intent_classification", "result": "billing_dispute"}
+```
+
+<ResponseField name="type" type="string">
+  Always `"trace"`.
+</ResponseField>
+
+<ResponseField name="step" type="string">
+  The reasoning step name (e.g. `intent_classification`, `policy_check`, `tool_selection`).
+</ResponseField>
+
+<ResponseField name="result" type="string">
+  Human-readable result of this step.
+</ResponseField>
+
+### `complete` — Final Turn Response
+
+The last event in the stream. Contains the full [TurnResponse](/api-reference/conversations/turns#response-turnresponse) object. After receiving this event, the connection closes.
+
+```
+data: {"type": "complete", "turn_id": "trn_abc789", "text": "Hello, how can I help?", "session_status": "active", "ended": false, "turn_ttft_ms": 312}
+```
+
+<ResponseField name="type" type="string">
+  Always `"complete"`.
+</ResponseField>
+
+<ResponseField name="turn_id" type="string">
+  Unique turn ID.
+</ResponseField>
+
+<ResponseField name="text" type="string">
+  Full agent response text (same as concatenating all `delta.text` values).
+</ResponseField>
+
+<ResponseField name="session_status" type="string">
+  Conversation status after this turn.
+</ResponseField>
+
+<ResponseField name="ended" type="boolean">
+  `true` if the conversation closed or transferred during this turn.
+</ResponseField>
+
+<ResponseField name="turn_ttft_ms" type="integer">
+  Time-to-first-token in milliseconds.
+</ResponseField>
+
+<ResponseField name="evidence" type="array">
+  Knowledge-base evidence. Present only when `include_evidence: true` was requested.
+</ResponseField>
+
+### `error` — Fatal Error
+
+Emitted if an unrecoverable error occurs. The stream closes immediately after this event.
+
+```
+data: {"type": "error", "code": "AGENT_UNAVAILABLE", "message": "The agent is temporarily unavailable. Please retry."}
+```
+
+<ResponseField name="type" type="string">
+  Always `"error"`.
+</ResponseField>
+
+<ResponseField name="code" type="string">
+  Machine-readable error code.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error description.
+</ResponseField>
+
+---
+
+## Example SSE Output
+
+```
+data: {"type": "delta", "text": "Hello"}
+
+data: {"type": "delta", "text": ", how"}
+
+data: {"type": "delta", "text": " can I help"}
+
+data: {"type": "delta", "text": " you today?"}
+
+data: {"type": "complete", "turn_id": "trn_abc789", "text": "Hello, how can I help you today?", "session_status": "active", "ended": false, "turn_ttft_ms": 287}
+```
+
+---
+
+## Code Examples
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/turns/stream" \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  --no-buffer \
+  -d '{"user_message": "I was charged twice last month."}'
+```
+
+```javascript JavaScript (fetch + ReadableStream)
+async function streamTurn(conversationId, userMessage) {
+  const response = await fetch(
+    `https://api-sandbox.featherhq.com/v1/v2/conversations/${conversationId}/turns/stream`,
+    {
+      method: "POST",
+      headers: {
+        "x-api-key": "<key>",
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({ user_message: userMessage }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop(); // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const event = JSON.parse(line.slice(6));
+
+      if (event.type === "delta") {
+        fullText += event.text;
+        process.stdout.write(event.text); // Stream to UI
+      } else if (event.type === "tool_call") {
+        console.log(`\n[Tool: ${event.tool_name} – ${event.status}]`);
+      } else if (event.type === "complete") {
+        console.log("\n--- Complete ---");
+        console.log("Status:", event.session_status);
+        console.log("TTFT:", event.turn_ttft_ms, "ms");
+        return event;
+      } else if (event.type === "error") {
+        throw new Error(`${event.code}: ${event.message}`);
+      }
+    }
+  }
+}
+
+// Usage
+streamTurn("conv_xyz456", "I was charged twice last month.")
+  .then((turn) => console.log("Turn ID:", turn.turn_id))
+  .catch(console.error);
+```
+
+```javascript JavaScript (EventSource)
+// Note: EventSource only supports GET requests. Use fetch+ReadableStream for POST.
+// If your backend proxies the stream as a GET, you can use EventSource:
+
+const es = new EventSource(
+  "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/turns/stream?token=<jwt>"
+);
+
+es.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === "delta") {
+    document.getElementById("response").textContent += data.text;
+  } else if (data.type === "complete") {
+    es.close();
+  } else if (data.type === "error") {
+    console.error(data.message);
+    es.close();
+  }
+};
+```
+
+```python Python (httpx)
+import httpx
+import json
+
+def stream_turn(conversation_id: str, user_message: str):
+    full_text = ""
+
+    with httpx.stream(
+        "POST",
+        f"https://api-sandbox.featherhq.com/v1/v2/conversations/{conversation_id}/turns/stream",
+        headers={
+            "x-api-key": "<key>",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        },
+        json={"user_message": user_message},
+        timeout=120,
+    ) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if not line.startswith("data: "):
+                continue
+            event = json.loads(line[6:])
+
+            if event["type"] == "delta":
+                full_text += event["text"]
+                print(event["text"], end="", flush=True)
+            elif event["type"] == "tool_call":
+                print(f"\n[Tool: {event['tool_name']} – {event['status']}]")
+            elif event["type"] == "complete":
+                print(f"\n\nStatus: {event['session_status']}")
+                print(f"TTFT: {event['turn_ttft_ms']}ms")
+                return event
+            elif event["type"] == "error":
+                raise RuntimeError(f"{event['code']}: {event['message']}")
+
+# Usage
+turn = stream_turn("conv_xyz456", "I was charged twice last month.")
+print("Turn ID:", turn["turn_id"])
+```
+</CodeGroup>
+
+---
+
+## Debugging with `trace=true`
+
+Add `?trace=true` to the streaming URL to receive intermediate reasoning steps interleaved with delta tokens. This is useful for diagnosing unexpected routing decisions, policy blocks, or tool selection behaviour.
+
+```bash
+curl -X POST \
+  "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/turns/stream?trace=true" \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  --no-buffer \
+  -d '{"user_message": "Cancel my subscription"}'
+```
+
+Example trace output:
+
+```
+data: {"type": "trace", "step": "intent_classification", "result": "subscription_cancellation"}
+data: {"type": "trace", "step": "policy_check", "result": "passed – no cancellation block active"}
+data: {"type": "trace", "step": "workflow_node", "result": "confirm_cancellation_intent"}
+data: {"type": "delta", "text": "I can help you cancel"}
+data: {"type": "delta", "text": " your subscription."}
+data: {"type": "complete", "turn_id": "trn_abc789", "text": "I can help you cancel your subscription.", "session_status": "active", "ended": false, "turn_ttft_ms": 445}
+```
+
+<Warning>
+  Trace events expose internal agent reasoning including policy decisions and tool inputs. Never enable `trace=true` in production client-facing applications — use it only in your backend or development environments.
+</Warning>

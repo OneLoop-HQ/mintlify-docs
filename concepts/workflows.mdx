@@ -1,0 +1,161 @@
+---
+title: "Workflows: Structured Conversation Graphs for Agents"
+sidebarTitle: "Workflows"
+description: "Workflows define graph-based conversation flows that agents follow. Each workflow is compiled from instructions into a graph with nodes and edges."
+---
+
+Workflows give you precise control over how an agent navigates a conversation. Instead of relying purely on the agent's LLM to decide what to do next, you define a directed graph of steps — the agent follows the graph, executing nodes in order and branching based on conditions or LLM decisions. This makes complex, multi-step interactions reliable, auditable, and testable.
+
+## What Is a Workflow?
+
+A workflow is a directed graph composed of **nodes** and **edges**. Nodes represent discrete steps in a conversation. Edges represent transitions between steps, optionally conditioned on data from the previous node.
+
+You author a workflow by writing structured instructions — natural language descriptions of each step, what the agent should do, and when to move on. Feather's compiler translates these instructions into a `compiled_graph` object, which the runtime executes.
+
+<Note>
+  A workflow is attached to an **agent revision**, not directly to an agent. This means your workflow and your agent's system prompt, tools, and policies are all versioned together. Updating your workflow requires creating and publishing a new agent revision.
+</Note>
+
+---
+
+## The Authoring Model
+
+<Steps>
+  <Step title="Write instructions">
+    Create a workflow with a human-readable `instructions` block. Describe each step you want the agent to take, in plain language. Reference node types by name to signal what kind of step each one is (e.g. "Ask the user for their order number. This is an **agent** step.").
+  </Step>
+  <Step title="Compile the workflow">
+    Call `POST /v1/workflows/revisions/{revision_id}/compile`. Feather's compiler parses your instructions and generates a `compiled_graph` — a structured JSON representation of all nodes, edges, and conditions.
+
+    Compilation is asynchronous. Poll `compilation_status` on the revision until it reaches `completed` or `failed`.
+  </Step>
+  <Step title="Review the compiled graph">
+    Inspect the `compiled_graph` to verify that Feather interpreted your instructions correctly. You can also visualize the graph in the Feather dashboard's workflow editor.
+  </Step>
+  <Step title="Attach to an agent revision">
+    Call `POST /v1/agents/revisions/{agent_revision_id}/workflows` with the workflow revision ID. The workflow is now active for any conversation that uses this agent revision.
+  </Step>
+  <Step title="Test in the playground">
+    Use `POST /v1/workflow/playground/sessions` to run the workflow interactively before promoting it to production.
+  </Step>
+</Steps>
+
+---
+
+## Node Types
+
+Feather workflows support four node types, each serving a distinct role in a conversation graph:
+
+<CardGroup cols={2}>
+  <Card title="Agent node" icon="robot">
+    An LLM-powered step. The agent receives instructions, the current conversation context, and any attached tools and knowledge bases. It generates a response and determines the next edge to follow based on the outcome.
+  </Card>
+  <Card title="Action node" icon="bolt">
+    A deterministic, code-like step that executes a specific API call or data transformation without LLM involvement. Use action nodes for reliable, repeatable operations like looking up an order status or sending a confirmation email.
+  </Card>
+  <Card title="Handoff node" icon="hand">
+    Transfers the conversation to a human agent queue. Execution of the workflow pauses while the conversation status moves to `waiting_for_human`. The workflow resumes (or closes) based on your configured resume policy.
+  </Card>
+  <Card title="Approval node" icon="user-check">
+    Pauses execution and creates an approval request for a human reviewer. The workflow branches based on the reviewer's decision — one edge for `approved`, another for `rejected`. Use approval nodes to gate high-stakes actions like issuing refunds or modifying account data.
+  </Card>
+</CardGroup>
+
+### Node configuration
+
+Each node type accepts different configuration fields:
+
+<AccordionGroup>
+  <Accordion title="Agent node fields">
+    | Field | Description |
+    |---|---|
+    | `instructions` | The system-level guidance for this specific step (appended to the agent's base system prompt) |
+    | `tool_refs` | Optional override of which tools are available in this node only |
+    | `knowledge_base_refs` | Optional override of which KBs are searched in this node only |
+    | `exit_conditions` | Array of conditions that define which edge to take when the node completes |
+  </Accordion>
+  <Accordion title="Action node fields">
+    | Field | Description |
+    |---|---|
+    | `tool_id` | The tool to invoke deterministically |
+    | `input_mapping` | JSONPath expressions mapping conversation context to tool input fields |
+    | `output_mapping` | JSONPath expressions mapping tool output to conversation context variables |
+    | `on_error` | Edge to follow if the tool call fails |
+  </Accordion>
+  <Accordion title="Handoff node fields">
+    | Field | Description |
+    |---|---|
+    | `queue_id` | The human agent queue to route to |
+    | `handoff_message` | Optional message shown to the human agent on pickup |
+    | `resume_on_return` | Whether to continue the workflow after the human returns control (`true`) or close the conversation (`false`) |
+  </Accordion>
+  <Accordion title="Approval node fields">
+    | Field | Description |
+    |---|---|
+    | `approval_prompt` | The question shown to the human reviewer |
+    | `timeout_hours` | How long to wait for a decision before taking the `timeout_edge` |
+    | `approved_edge` | Node to transition to on approval |
+    | `rejected_edge` | Node to transition to on rejection |
+    | `timeout_edge` | Node to transition to if the timeout elapses |
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## The Revision Model
+
+Workflows follow the same revision model as agents:
+
+| Stage | Description |
+|---|---|
+| **Draft** | The workflow revision is editable. You can update instructions and recompile as many times as needed. |
+| **Compiled** | The `compiled_graph` has been generated. The revision is still in draft but ready to be attached. |
+| **Attached** | The workflow revision has been attached to an agent revision. It cannot be modified while attached. |
+
+<Warning>
+  If compilation fails, check the `compilation_errors` array on the revision. Common causes include ambiguous edge conditions, circular references between nodes, and missing tool IDs. Fix the instructions and recompile.
+</Warning>
+
+---
+
+## Compilation
+
+Calling `POST /v1/workflows/revisions/{revision_id}/compile` kicks off the async compilation process. You should poll the revision until `compilation_status` is no longer `pending`:
+
+```bash
+GET https://api-sandbox.featherhq.com/v1/workflows/revisions/{revision_id}
+```
+
+| `compilation_status` | Meaning |
+|---|---|
+| `pending` | Compilation is queued or in progress |
+| `completed` | `compiled_graph` is populated and ready |
+| `failed` | Compilation encountered errors; see `compilation_errors` |
+
+Once compilation completes, Feather populates `compiled_graph` with the full node and edge definitions. You can inspect this field to verify the structure before attaching the workflow to an agent revision.
+
+---
+
+## The Playground
+
+Before attaching a workflow to a production agent revision, use the **workflow playground** to run interactive test sessions:
+
+```bash
+POST https://api-sandbox.featherhq.com/v1/workflow/playground/sessions
+```
+
+The playground creates an isolated session tied to a specific workflow revision. You submit turns and observe how the workflow traverses nodes, which edges it follows, and what each node returns. Playground sessions are not counted as production `live` conversations and do not affect end user records.
+
+<Tip>
+  Use the playground to simulate approval and handoff paths by responding as the human reviewer. This lets you validate all branches of your workflow graph before deploying to end users.
+</Tip>
+
+---
+
+## Next Steps
+
+<CardGroup cols={1}>
+  <Card title="Workflows API Reference" icon="code" href="/api-reference/workflows/overview">
+    Full reference for workflow, revision, compilation, and playground endpoints — including complete request schemas and compiled graph examples.
+  </Card>
+</CardGroup>

@@ -1,0 +1,294 @@
+---
+title: "Build and Deploy Your First Feather AI Agent"
+sidebarTitle: "First Agent"
+description: "Create an AI agent with a system prompt, attach a knowledge base, add a custom tool, and bind it to a conversation — step by step."
+---
+
+Every Feather AI agent is made up of a few composable pieces: an **agent** record that holds metadata, one or more **revisions** that define its behavior (system prompt, tools, knowledge bases), and a pointer to the currently **active revision** that runs in production. This guide walks you through creating each piece from scratch — by the end you'll have a fully configured agent ready to handle real conversations.
+
+<Steps>
+
+  <Step title="Create the agent">
+    Start by registering a new agent in your organization. This creates the top-level agent record — no behavior is defined yet.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/agents \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Customer Support Bot",
+        "description": "Helps customers with account questions"
+      }'
+    ```
+    </CodeGroup>
+
+    A successful response returns the new agent object:
+
+    ```json
+    {
+      "id": "agt_01hx3k2mz9vbqwerty123456",
+      "organization_id": "org_01hx0abc123def456ghi789",
+      "name": "Customer Support Bot",
+      "description": "Helps customers with account questions",
+      "active_revision_id": null,
+      "created_at": "2024-05-14T10:22:00Z"
+    }
+    ```
+
+    Note that `active_revision_id` is `null` — the agent won't respond to conversations until you create and activate a revision.
+  </Step>
+
+  <Step title="Create a revision with a system prompt">
+    A revision captures the agent's complete configuration at a point in time. Create `v1` now with a system prompt and a context variable that carries the customer's name into every conversation.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/agents/agt_01hx3k2mz9vbqwerty123456/revisions \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "v1",
+        "system_prompt": "You are a helpful customer support agent. Always be polite and concise. If you do not know the answer, say so.",
+        "context_variables": [
+          {
+            "name": "customer_name",
+            "type": "string",
+            "source": "derived"
+          }
+        ]
+      }'
+    ```
+    </CodeGroup>
+
+    ```json
+    {
+      "id": "rev_01hx3k9pq7rstuv234567890",
+      "agent_id": "agt_01hx3k2mz9vbqwerty123456",
+      "name": "v1",
+      "system_prompt": "You are a helpful customer support agent. Always be polite and concise. If you do not know the answer, say so.",
+      "context_variables": [
+        {
+          "name": "customer_name",
+          "type": "string",
+          "source": "derived"
+        }
+      ],
+      "knowledge_base_refs": [],
+      "tool_refs": [],
+      "created_at": "2024-05-14T10:23:15Z"
+    }
+    ```
+
+    Save the revision `id` — you'll need it in the steps ahead.
+  </Step>
+
+  <Step title="Create a knowledge base">
+    Knowledge bases store the documents your agent can search at inference time. Create one for your product documentation now.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Product Docs",
+        "description": "Our product documentation"
+      }'
+    ```
+    </CodeGroup>
+
+    ```json
+    {
+      "id": "kb_01hx4mno5pqrstuvwxyz0001",
+      "organization_id": "org_01hx0abc123def456ghi789",
+      "name": "Product Docs",
+      "description": "Our product documentation",
+      "document_count": 0,
+      "created_at": "2024-05-14T10:24:00Z"
+    }
+    ```
+
+    The knowledge base is empty for now. See [Ingest Documents](/guides/ingest-documents) to populate it with files, text snippets, or external sources like Notion.
+  </Step>
+
+  <Step title="Attach the knowledge base to the revision">
+    Update the revision to reference the knowledge base. The `description` inside `knowledge_base_refs` is used by the agent to decide when to query this source.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X PUT https://api-sandbox.featherhq.com/v1/agents/revisions/rev_01hx3k9pq7rstuv234567890 \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "knowledge_base_refs": [
+          {
+            "id": "kb_01hx4mno5pqrstuvwxyz0001",
+            "description": "Product documentation for answering customer questions"
+          }
+        ]
+      }'
+    ```
+    </CodeGroup>
+
+    The response mirrors the full revision object with `knowledge_base_refs` now populated.
+  </Step>
+
+  <Step title="Set the revision as active">
+    Promoting a revision to active makes it the version that handles all new conversations for this agent.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/agents/agt_01hx3k2mz9vbqwerty123456/set-active-revision \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "revision_id": "rev_01hx3k9pq7rstuv234567890"
+      }'
+    ```
+    </CodeGroup>
+
+    ```json
+    {
+      "id": "agt_01hx3k2mz9vbqwerty123456",
+      "name": "Customer Support Bot",
+      "active_revision_id": "rev_01hx3k9pq7rstuv234567890",
+      "updated_at": "2024-05-14T10:25:30Z"
+    }
+    ```
+
+    `active_revision_id` now points to `v1`. Any future revisions you create won't go live until you call this endpoint again.
+  </Step>
+
+  <Step title="Test with a conversation">
+    Use the test-chat endpoint to spin up a sandboxed session without affecting production analytics or memory.
+
+    **Open a test session:**
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/test-chat \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "agent_id": "agt_01hx3k2mz9vbqwerty123456"
+      }'
+    ```
+    </CodeGroup>
+
+    ```json
+    {
+      "session_id": "sess_01hx5test9876543210abcd",
+      "session_type": "test",
+      "status": "active"
+    }
+    ```
+
+    **Send a turn:**
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/sess_01hx5test9876543210abcd/turns \
+      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "user_message": "What features do you offer?"
+      }'
+    ```
+    </CodeGroup>
+
+    ```json
+    {
+      "turn_id": "turn_01hx5abc123def456ghi789",
+      "text": "Great question! Our platform offers real-time conversation management, AI-powered knowledge retrieval, custom tool integrations, and seamless human handoff. Is there a specific feature you'd like to know more about?",
+      "session_status": "active",
+      "message_seqs": [4, 5]
+    }
+    ```
+
+    <Note>
+      Test sessions (`session_type: test`) are isolated — they do **not** sync conversation history to long-term memory, trigger post-session webhooks, or count toward production usage metrics. Use them freely during development.
+    </Note>
+  </Step>
+
+</Steps>
+
+---
+
+## Adding a custom tool
+
+Tools let your agent call external APIs mid-conversation — for example, looking up an order status or submitting a refund request.
+
+### 1. Register the tool
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/tools \
+  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "lookup_order",
+    "description": "Look up the status of a customer order by order ID.",
+    "configuration": {
+      "url": "https://api.yourstore.com/orders/{order_id}",
+      "method": "GET",
+      "headers": {
+        "Authorization": "Bearer {{env.STORE_API_KEY}}"
+      },
+      "path_params": [
+        {
+          "name": "order_id",
+          "description": "The order ID to look up",
+          "type": "string",
+          "required": true
+        }
+      ]
+    }
+  }'
+```
+</CodeGroup>
+
+```json
+{
+  "id": "tool_01hx6orderlookup12345678",
+  "name": "lookup_order",
+  "description": "Look up the status of a customer order by order ID.",
+  "created_at": "2024-05-14T10:30:00Z"
+}
+```
+
+### 2. Attach the tool to the revision
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api-sandbox.featherhq.com/v1/agents/revisions/rev_01hx3k9pq7rstuv234567890 \
+  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool_refs": [
+      {
+        "id": "tool_01hx6orderlookup12345678"
+      }
+    ]
+  }'
+```
+</CodeGroup>
+
+The agent will now automatically invoke `lookup_order` whenever a customer asks about a specific order, passing the extracted `order_id` as a path parameter.
+
+<Tip>
+  You can attach multiple tools and knowledge bases to a single revision. The agent decides which resources to use based on the conversation context and the descriptions you provide on each reference.
+</Tip>
+
+---
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="Ingest Documents" icon="book-open" href="/guides/ingest-documents">
+    Upload files, paste text, or sync from Notion and Google Drive into your knowledge base.
+  </Card>
+  <Card title="Run a Conversation" icon="messages" href="/guides/run-a-conversation">
+    Open sessions, send messages, stream responses, and close sessions with full code examples.
+  </Card>
+</CardGroup>

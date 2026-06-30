@@ -1,0 +1,448 @@
+---
+title: "Connect Third-Party Integrations to Your Agents"
+sidebarTitle: "Connect Integration"
+description: "Add Slack, Notion, Twilio, Google Drive, and custom MCP servers to Feather. Give your agents real-world tools backed by your existing services."
+---
+
+Integrations extend your agents beyond conversation — they let your AI act on the world by calling real APIs, sending messages, querying documents, and triggering workflows inside the tools your team already uses. Feather's integration layer handles OAuth flows, credential storage, and tool schema sync so you can focus on building agent logic rather than plumbing.
+
+## Browse available integrations
+
+Before connecting, discover what's available. The `/v1/integrations` endpoint returns a catalog of supported services, each described by an `IntegrationSummary` object.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api-sandbox.featherhq.com/v1/integrations \
+  -H "Authorization: Bearer <your_api_key>"
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    "https://api-sandbox.featherhq.com/v1/integrations",
+    headers={"Authorization": "Bearer <your_api_key>"}
+)
+print(response.json())
+```
+
+```typescript TypeScript
+const response = await fetch(
+  "https://api-sandbox.featherhq.com/v1/integrations",
+  { headers: { Authorization: "Bearer <your_api_key>" } }
+);
+const data = await response.json();
+```
+</CodeGroup>
+
+**Example response:**
+
+```json
+{
+  "integrations": [
+    {
+      "key": "slack",
+      "display_name": "Slack",
+      "description": "Send messages, list channels, and react to events in Slack workspaces.",
+      "category": "messaging",
+      "logo_url": "https://cdn.featherhq.com/logos/slack.svg"
+    },
+    {
+      "key": "notion",
+      "display_name": "Notion",
+      "description": "Read and write Notion pages, databases, and blocks.",
+      "category": "productivity",
+      "logo_url": "https://cdn.featherhq.com/logos/notion.svg"
+    },
+    {
+      "key": "google_drive",
+      "display_name": "Google Drive",
+      "description": "Search, read, and manage files in Google Drive.",
+      "category": "storage",
+      "logo_url": "https://cdn.featherhq.com/logos/google-drive.svg"
+    },
+    {
+      "key": "twilio",
+      "display_name": "Twilio",
+      "description": "Send SMS, make voice calls, and manage phone numbers via Twilio.",
+      "category": "communications",
+      "logo_url": "https://cdn.featherhq.com/logos/twilio.svg"
+    },
+    {
+      "key": "calcom",
+      "display_name": "Cal.com",
+      "description": "Book, reschedule, and cancel calendar appointments.",
+      "category": "scheduling",
+      "logo_url": "https://cdn.featherhq.com/logos/calcom.svg"
+    },
+    {
+      "key": "email",
+      "display_name": "Email",
+      "description": "Send and receive emails on behalf of your organization.",
+      "category": "communications",
+      "logo_url": "https://cdn.featherhq.com/logos/email.svg"
+    },
+    {
+      "key": "custom_mcp",
+      "display_name": "Custom MCP Server",
+      "description": "Connect any server that implements the Model Context Protocol.",
+      "category": "custom",
+      "logo_url": "https://cdn.featherhq.com/logos/mcp.svg"
+    }
+  ]
+}
+```
+
+---
+
+## Connect an integration (OAuth)
+
+Most first-party integrations use OAuth. Feather delegates the OAuth handshake to [Nango](https://nango.dev), an open-source auth platform — you never handle raw credentials.
+
+<Steps>
+  <Step title="Initiate the connection">
+    Create a connection record and receive a short-lived `session_token`.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "integration_key": "slack",
+        "nickname": "My Slack Workspace"
+      }'
+    ```
+
+    ```python Python
+    import requests
+
+    response = requests.post(
+        "https://api-sandbox.featherhq.com/v1/integrations/connections",
+        headers={"Authorization": "Bearer <your_api_key>"},
+        json={"integration_key": "slack", "nickname": "My Slack Workspace"}
+    )
+    print(response.json())
+    ```
+
+    ```typescript TypeScript
+    const response = await fetch(
+      "https://api-sandbox.featherhq.com/v1/integrations/connections",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer <your_api_key>",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          integration_key: "slack",
+          nickname: "My Slack Workspace",
+        }),
+      }
+    );
+    const data = await response.json();
+    ```
+    </CodeGroup>
+
+    **Response:**
+
+    ```json
+    {
+      "connection_id": "conn_01hx9z3p4qr7mn2k8wdt",
+      "session_token": "nango_sess_eyJhbGciOiJIUzI1NiJ9...",
+      "expires_at": "2024-09-01T14:32:00Z",
+      "vendor": "nango"
+    }
+    ```
+  </Step>
+
+  <Step title="Open the OAuth popup">
+    Use the `session_token` with the Nango frontend SDK to launch the OAuth consent screen in your UI.
+
+    ```typescript
+    import Nango from "@nangohq/frontend";
+
+    const nango = new Nango();
+    await nango.auth("slack", "<connection_id>", {
+      sessionToken: "<session_token>",
+    });
+    ```
+
+    The popup guides your user through Slack's standard OAuth flow. No credentials touch your server.
+  </Step>
+
+  <Step title="Finalize the connection">
+    Once the user completes OAuth, activate the connection so Feather can begin syncing tools.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/finalize \
+      -H "Authorization: Bearer <your_api_key>"
+    ```
+
+    ```python Python
+    requests.post(
+        "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/finalize",
+        headers={"Authorization": "Bearer <your_api_key>"}
+    )
+    ```
+    </CodeGroup>
+
+    Feather will immediately sync the tool schema for your new connection. Tools are ready to attach to agents within seconds.
+  </Step>
+</Steps>
+
+---
+
+## Connect a custom MCP server
+
+Any server that implements the [Model Context Protocol](https://modelcontextprotocol.io) can be connected to Feather — whether it's an internal microservice or a third-party MCP host.
+
+### Bearer token authentication
+
+For MCP servers protected by a static secret:
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nickname": "My MCP",
+    "server_url": "https://mcp.example.com",
+    "transport": "sse",
+    "auth_type": "bearer",
+    "token": "<secret>"
+  }'
+```
+
+```python Python
+requests.post(
+    "https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp",
+    headers={"Authorization": "Bearer <your_api_key>"},
+    json={
+        "nickname": "My MCP",
+        "server_url": "https://mcp.example.com",
+        "transport": "sse",
+        "auth_type": "bearer",
+        "token": "<secret>"
+    }
+)
+```
+
+```typescript TypeScript
+await fetch(
+  "https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp",
+  {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer <your_api_key>",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      nickname: "My MCP",
+      server_url: "https://mcp.example.com",
+      transport: "sse",
+      auth_type: "bearer",
+      token: "<secret>",
+    }),
+  }
+);
+```
+</CodeGroup>
+
+### OAuth-protected MCP servers
+
+For MCP servers that use OAuth, first run discovery to retrieve the authorization metadata:
+
+<Steps>
+  <Step title="Discover OAuth config">
+    ```bash
+    curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp/discover \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{"server_url": "https://mcp.example.com"}'
+    ```
+
+    The response includes the OAuth authorization endpoints and scopes required by the server.
+  </Step>
+
+  <Step title="Connect with OAuth">
+    Use the discovered metadata to connect with `auth_type: "oauth"`, then follow the same finalize flow as standard OAuth integrations.
+
+    ```bash
+    curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp \
+      -H "Authorization: Bearer <your_api_key>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "nickname": "My MCP",
+        "server_url": "https://mcp.example.com",
+        "transport": "sse",
+        "auth_type": "oauth"
+      }'
+    ```
+  </Step>
+</Steps>
+
+---
+
+## View and manage tools
+
+After a connection is finalized, Feather automatically syncs the available tools from the integration. Each tool has a unique `slug`, a human-readable name, and a JSON Schema describing its inputs.
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt \
+  -H "Authorization: Bearer <your_api_key>"
+```
+
+```python Python
+requests.get(
+    "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt",
+    headers={"Authorization": "Bearer <your_api_key>"}
+)
+```
+</CodeGroup>
+
+**Response (tools array excerpt):**
+
+```json
+{
+  "connection_id": "conn_01hx9z3p4qr7mn2k8wdt",
+  "integration_key": "slack",
+  "nickname": "My Slack Workspace",
+  "status": "active",
+  "tools": [
+    {
+      "slug": "send_message",
+      "display_name": "Send Message",
+      "is_enabled": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "channel": { "type": "string", "description": "Channel name or ID" },
+          "text": { "type": "string", "description": "Message content" }
+        },
+        "required": ["channel", "text"]
+      }
+    },
+    {
+      "slug": "list_channels",
+      "display_name": "List Channels",
+      "is_enabled": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "default": 20 }
+        }
+      }
+    }
+  ]
+}
+```
+
+### Disable or enable individual tools
+
+Prevent an agent from calling specific tools without disconnecting the entire integration:
+
+```bash
+curl -X PATCH \
+  "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/tools/send_message" \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{"is_enabled": false}'
+```
+
+### Bulk toggle all tools
+
+```bash
+curl -X PATCH \
+  "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/tools" \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{"is_enabled": true}'
+```
+
+---
+
+## Test a tool
+
+Before attaching a tool to an agent, verify it works end-to-end using the test invoke endpoint.
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/test-invoke" \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "send_message",
+    "input": {
+      "channel": "#general",
+      "text": "Hello from Feather!"
+    }
+  }'
+```
+
+```python Python
+requests.post(
+    "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/test-invoke",
+    headers={"Authorization": "Bearer <your_api_key>"},
+    json={
+        "slug": "send_message",
+        "input": {"channel": "#general", "text": "Hello from Feather!"}
+    }
+)
+```
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "raw": {
+    "ok": true,
+    "channel": "C08ABCDEF",
+    "ts": "1725200000.123456",
+    "message": { "text": "Hello from Feather!", "type": "message" }
+  },
+  "narrowed": {
+    "ok": true,
+    "channel": "C08ABCDEF",
+    "ts": "1725200000.123456"
+  }
+}
+```
+
+The `raw` field is the full vendor API response. `narrowed` is the field-map filtered result that your agent actually receives — only the fields relevant to decision-making.
+
+---
+
+## Attach integration tools to an agent
+
+Reference integration tools in your agent revision's `tool_refs` array using the fully qualified slug format: `{integration_key}:{connection-nickname-slug}:{tool_slug}`.
+
+```json
+{
+  "tool_refs": [
+    {
+      "kind": "integration",
+      "slug": "slack:my-slack-workspace:send_message"
+    },
+    {
+      "kind": "integration",
+      "slug": "slack:my-slack-workspace:list_channels"
+    },
+    {
+      "kind": "integration",
+      "slug": "notion:my-notion:search_pages"
+    }
+  ]
+}
+```
+
+The agent will automatically receive the tool's input schema in its context and can invoke it during a conversation without any additional wiring.
+
+<Tip>
+  If an integration provider adds new tools or changes their schema, use `POST /v1/integrations/connections/{connection_id}/refresh-tools` to manually re-sync. This is useful when building against a frequently updated MCP server.
+</Tip>

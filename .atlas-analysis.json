@@ -1,0 +1,197 @@
+{
+  "projectType": "api-service",
+  "projectName": "Feather CX Platform",
+  "projectDescription": "A unified customer experience platform API for managing AI agents, knowledge bases, conversations, voice/SMS/email channels, integrations, policies, and analytics.",
+  "theme": "luma",
+  "primaryColor": "#ef7025",
+  "lightColor": "#eec9bc",
+  "darkColor": "#4fa1ab",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "authentication",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/agents",
+              "concepts/knowledge-bases",
+              "concepts/conversations",
+              "concepts/workflows",
+              "concepts/policies"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/build-your-first-agent",
+              "guides/ingest-documents",
+              "guides/run-a-conversation",
+              "guides/connect-an-integration",
+              "guides/voice-calls",
+              "guides/human-in-the-loop",
+              "guides/evaluations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Identity & Auth",
+            "pages": [
+              "api-reference/identity/whoami",
+              "api-reference/identity/organization",
+              "api-reference/identity/end-users",
+              "api-reference/identity/api-keys",
+              "api-reference/identity/members"
+            ]
+          },
+          {
+            "group": "Agents & Workflows",
+            "pages": [
+              "api-reference/agents/overview",
+              "api-reference/agents/revisions",
+              "api-reference/agents/workflows",
+              "api-reference/agents/policies",
+              "api-reference/teams",
+              "api-reference/workflows/overview",
+              "api-reference/workflows/compile",
+              "api-reference/personas"
+            ]
+          },
+          {
+            "group": "Conversations & Runtime",
+            "pages": [
+              "api-reference/conversations/overview",
+              "api-reference/conversations/turns",
+              "api-reference/conversations/streaming",
+              "api-reference/hitl/approvals",
+              "api-reference/hitl/handoffs"
+            ]
+          },
+          {
+            "group": "Knowledge Base",
+            "pages": [
+              "api-reference/knowledge-base/overview",
+              "api-reference/knowledge-base/ingest",
+              "api-reference/knowledge-base/search",
+              "api-reference/knowledge-base/connectors",
+              "api-reference/knowledge-base/classification",
+              "api-reference/knowledge-base/evals"
+            ]
+          },
+          {
+            "group": "Tools & Integrations",
+            "pages": [
+              "api-reference/tools/overview",
+              "api-reference/tools/execute",
+              "api-reference/integrations/connections",
+              "api-reference/integrations/mcp",
+              "api-reference/mocks"
+            ]
+          },
+          {
+            "group": "Communications",
+            "pages": [
+              "api-reference/voice/overview",
+              "api-reference/voice/calls",
+              "api-reference/sms",
+              "api-reference/email/mailboxes",
+              "api-reference/email/drafts",
+              "api-reference/phone-numbers"
+            ]
+          },
+          {
+            "group": "Policies & Privacy",
+            "pages": [
+              "api-reference/policies/overview",
+              "api-reference/policies/revisions",
+              "api-reference/policies/enforcement",
+              "api-reference/privacy",
+              "api-reference/retention-policies"
+            ]
+          },
+          {
+            "group": "Analytics",
+            "pages": [
+              "api-reference/analytics/sessions",
+              "api-reference/analytics/tools",
+              "api-reference/analytics/knowledge",
+              "api-reference/analytics/integrations",
+              "api-reference/analytics/knowledge-gaps"
+            ]
+          },
+          {
+            "group": "Testing & Evals",
+            "pages": [
+              "api-reference/evaluators/overview",
+              "api-reference/evaluators/bindings",
+              "api-reference/simulations/scenarios",
+              "api-reference/simulations/suites",
+              "api-reference/simulations/runs"
+            ]
+          },
+          {
+            "group": "Platform",
+            "pages": [
+              "api-reference/model-router",
+              "api-reference/webhooks",
+              "api-reference/notifications"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI agent creation and management with revisions and workflow graphs",
+    "Multi-channel conversations: voice, SMS, email, and API",
+    "Knowledge base with semantic search, connectors (Notion, Google Drive, S3), and sensitivity classification",
+    "Human-in-the-loop approvals and handoffs",
+    "Warm call transfer with Twilio bridge numbers",
+    "Policy enforcement with LLM judge and expression-based checks",
+    "Custom and MCP-based integrations with tool management",
+    "Simulation testing with personas, scenarios, and eval suites",
+    "Comprehensive analytics across tools, sessions, knowledge, and integrations",
+    "PII scrubbing, data retention, and governance controls",
+    "Webhook subscriptions and Slack notifications",
+    "Model routing with fallback chains"
+  ],
+  "publicApiSurface": [
+    "GET /v1/identity/whoami",
+    "POST /v1/agents",
+    "GET /v1/agents/{agent_id}",
+    "POST /v1/agents/{agent_id}/revisions",
+    "POST /v1/v2/conversations",
+    "POST /v1/v2/conversations/{conversation_id}/turns",
+    "POST /v1/v2/conversations/{conversation_id}/turns/stream",
+    "POST /v1/knowledge-base/knowledge-bases",
+    "POST /v1/knowledge-base/knowledge-bases/{kb_id}/ingest",
+    "POST /v1/knowledge-base/search",
+    "GET /v1/integrations",
+    "POST /v1/integrations/connections",
+    "POST /v1/tools",
+    "POST /v1/tools/{tool_id}/execute",
+    "POST /v1/sms/send",
+    "POST /v1/voice/outbound",
+    "GET /v1/model-router/models",
+    "POST /v1/model-router/invoke",
+    "POST /v1/model-router/stream",
+    "GET /v1/analytics/sessions/volume-timeseries",
+    "POST /v1/evaluators",
+    "POST /v1/simulation/runs",
+    "POST /v1/policies",
+    "GET /v1/webhooks/event-catalog",
+    "POST /v1/webhooks/portal"
+  ]
+}

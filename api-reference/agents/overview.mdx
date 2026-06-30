@@ -1,0 +1,378 @@
+---
+title: "Agents API: Create and Manage AI Agents"
+sidebarTitle: "Agents"
+description: "Create, list, update, and delete AI agents. Each agent has an active revision that controls its behavior, tools, knowledge bases, and policies."
+---
+
+Agents are the core AI entities in the Feather platform. Each agent encapsulates a persona, system prompt, knowledge base references, tools, and routing configuration. Agents use a revision model — you can iterate on an agent's configuration in draft revisions before activating one for live traffic.
+
+All agent endpoints require `org:admin` or `org:member` roles unless noted.
+
+---
+
+## POST /v1/agents
+
+Create a new agent. The agent is created with an initial draft revision using the parameters you supply.
+
+```
+POST https://api-sandbox.featherhq.com/v1/agents
+```
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  A unique, human-readable name for this agent (e.g., `"Tier 1 Support Bot"`).
+</ParamField>
+
+<ParamField body="description" type="string">
+  A brief description of what this agent does. Displayed in the dashboard and used for documentation purposes.
+</ParamField>
+
+<ParamField body="persona" type="string">
+  A short persona statement that shapes the agent's tone and communication style (e.g., `"A friendly, concise support specialist"`).
+</ParamField>
+
+<ParamField body="system_prompt" type="string">
+  The base system prompt injected into every conversation. Supports Feather template variables (e.g., `{{contact_name}}`).
+</ParamField>
+
+<ParamField body="global_skill_ids" type="array of strings">
+  UUIDs of skills that are always available to this agent regardless of revision.
+</ParamField>
+
+<ParamField body="context_variables" type="object">
+  Key-value pairs available for interpolation in the system prompt and tool configurations. Example: `{"brand_name": "Acme", "support_hours": "9am–5pm ET"}`.
+</ParamField>
+
+<ParamField body="channel_specific_config" type="object">
+  <Expandable title="ChannelSpecificConfig">
+    <ParamField body="voice" type="object">
+      Voice-channel overrides: `greeting_message`, `hold_music_url`, `max_call_duration_seconds`.
+    </ParamField>
+    <ParamField body="chat" type="object">
+      Chat-channel overrides: `typing_indicator_enabled`, `max_response_tokens`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="router_config_id" type="string (uuid)">
+  ID of the router configuration that determines how incoming sessions are dispatched to this agent.
+</ParamField>
+
+<ParamField body="model_settings" type="object">
+  <Expandable title="ModelSettings">
+    <ParamField body="model_id" type="string">
+      The LLM model identifier (e.g., `"gpt-4o"`, `"claude-3-5-sonnet"`).
+    </ParamField>
+    <ParamField body="temperature" type="number">
+      Sampling temperature between `0.0` (deterministic) and `2.0` (creative). Default: `0.7`.
+    </ParamField>
+    <ParamField body="max_tokens" type="integer">
+      Maximum tokens in the generated response. Default: `1024`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="kb_clearance_level" type="integer">
+  Knowledge base clearance level for this agent (0–100). Articles above this level are not surfaced.
+</ParamField>
+
+<ParamField body="kb_audience_tags" type="array of strings">
+  Tags used to filter knowledge base articles to those intended for this agent's audience.
+</ParamField>
+
+<ParamField body="knowledge_gap_analysis_enabled" type="boolean">
+  When `true`, Feather tracks queries that returned no KB results, enabling gap analysis reports. Default: `false`.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url https://api-sandbox.featherhq.com/v1/agents \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name": "Tier 1 Support Bot",
+    "description": "Handles common billing and account questions.",
+    "persona": "A friendly, concise support specialist",
+    "system_prompt": "You are a support agent for {{brand_name}}. Help customers with billing and account issues.",
+    "context_variables": { "brand_name": "Acme" },
+    "model_settings": { "model_id": "gpt-4o", "temperature": 0.5 },
+    "kb_clearance_level": 50,
+    "knowledge_gap_analysis_enabled": true
+  }'
+```
+
+```python Python
+import httpx
+
+res = httpx.post(
+    "https://api-sandbox.featherhq.com/v1/agents",
+    headers={"x-api-key": "YOUR_API_KEY"},
+    json={
+        "name": "Tier 1 Support Bot",
+        "description": "Handles common billing and account questions.",
+        "persona": "A friendly, concise support specialist",
+        "system_prompt": "You are a support agent for {{brand_name}}.",
+        "context_variables": {"brand_name": "Acme"},
+        "model_settings": {"model_id": "gpt-4o", "temperature": 0.5},
+        "kb_clearance_level": 50,
+    },
+)
+print(res.json())
+```
+
+</CodeGroup>
+
+---
+
+## GET /v1/agents
+
+List all agents in your organization with cursor-based pagination.
+
+```
+GET https://api-sandbox.featherhq.com/v1/agents
+```
+
+### Query Parameters
+
+<ParamField query="cursor" type="string">
+  Pagination cursor from the previous response.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Results per page. Default: `20`. Maximum: `100`.
+</ParamField>
+
+### Response Fields (`AgentListResponse`)
+
+<ResponseField name="items" type="array">
+  Array of agent summary objects containing `id`, `name`, `description`, `is_active`, `active_revision_id`, `created_at`, and `updated_at`.
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string | null">
+  Cursor for the next page.
+</ResponseField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'https://api-sandbox.featherhq.com/v1/agents?limit=20' \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+</CodeGroup>
+
+---
+
+## GET /v1/agents/{id}
+
+Retrieve full details for a single agent, including its active revision.
+
+```
+GET https://api-sandbox.featherhq.com/v1/agents/{id}
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The agent UUID.
+</ParamField>
+
+### Response Fields (`AgentResponse`)
+
+<ResponseField name="id" type="string (uuid)" required>
+  The agent's unique identifier.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Agent name.
+</ResponseField>
+
+<ResponseField name="description" type="string | null">
+  Agent description.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean" required>
+  Whether this agent is enabled to receive live traffic.
+</ResponseField>
+
+<ResponseField name="active_revision_id" type="string (uuid) | null">
+  The UUID of the currently live revision. `null` if no revision has been activated yet.
+</ResponseField>
+
+<ResponseField name="active_revision" type="object">
+  The full `AgentRevisionResponse` for the currently active revision. See [Revisions](/api-reference/agents/revisions) for field definitions.
+</ResponseField>
+
+<ResponseField name="release_suite_id" type="string (uuid) | null">
+  The release suite used for gated deployments, if configured.
+</ResponseField>
+
+<ResponseField name="release_gate_mode" type="string">
+  How the release gate is applied. One of `off`, `manual`, `automatic`.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)" required>
+  When the agent was created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string (ISO 8601)" required>
+  When the agent was last modified.
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "id": "9a1b2c3d-0000-4abc-8000-aabbccddeeff",
+  "name": "Tier 1 Support Bot",
+  "description": "Handles common billing and account questions.",
+  "is_active": true,
+  "active_revision_id": "r1a2b3c4-0000-4def-9000-112233445566",
+  "release_suite_id": null,
+  "release_gate_mode": "off",
+  "created_at": "2024-04-01T10:00:00Z",
+  "updated_at": "2024-05-20T08:30:00Z"
+}
+```
+
+---
+
+## PUT /v1/agents/{id}
+
+Update top-level agent metadata. To update behavioral configuration (prompt, tools, KB), create a new revision instead.
+
+```
+PUT https://api-sandbox.featherhq.com/v1/agents/{id}
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The agent UUID.
+</ParamField>
+
+### Request Body
+
+<ParamField body="name" type="string">
+  Updated agent name.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated description.
+</ParamField>
+
+<ParamField body="release_suite_id" type="string (uuid)">
+  Associate this agent with a release suite for gated deployments.
+</ParamField>
+
+<ParamField body="release_gate_mode" type="string">
+  One of `off`, `manual`, `automatic`. Controls how the release gate is enforced when activating new revisions.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url https://api-sandbox.featherhq.com/v1/agents/9a1b2c3d-0000-4abc-8000-aabbccddeeff \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name": "Tier 1 Support Bot v2",
+    "release_gate_mode": "manual"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## DELETE /v1/agents/{id}
+
+Delete an agent. Agents with active conversations cannot be deleted.
+
+```
+DELETE https://api-sandbox.featherhq.com/v1/agents/{id}
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The agent UUID to delete.
+</ParamField>
+
+Returns `204 No Content` on success.
+
+---
+
+## GET /v1/agents/{id}/eval-config
+
+Retrieve the evaluation configuration for an agent. This controls whether the agent's responses are scored by Feather's evaluation pipeline.
+
+```
+GET https://api-sandbox.featherhq.com/v1/agents/{id}/eval-config
+```
+
+### Response Fields
+
+<ResponseField name="evaluate_live" type="boolean" required>
+  Whether live production conversations are sent through the evaluation pipeline.
+</ResponseField>
+
+<ResponseField name="evaluate_test" type="boolean" required>
+  Whether test/simulation conversations are evaluated.
+</ResponseField>
+
+---
+
+## PUT /v1/agents/{id}/eval-config
+
+Update the agent's evaluation configuration.
+
+```
+PUT https://api-sandbox.featherhq.com/v1/agents/{id}/eval-config
+```
+
+### Request Body
+
+<ParamField body="evaluate_live" type="boolean" required>
+  Enable or disable evaluation for live traffic.
+</ParamField>
+
+<ParamField body="evaluate_test" type="boolean" required>
+  Enable or disable evaluation for test sessions.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url https://api-sandbox.featherhq.com/v1/agents/9a1b2c3d-0000-4abc-8000-aabbccddeeff/eval-config \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "evaluate_live": true,
+    "evaluate_test": false
+  }'
+```
+
+</CodeGroup>
+
+<Tip>
+  Enable `evaluate_test` while iterating on a new revision to measure quality before activating it for live traffic. Disable `evaluate_live` if evaluation latency is a concern in latency-sensitive voice deployments.
+</Tip>
+
+<Note>
+  Evaluation results are accessible in the Feather dashboard under **Analytics → Agent Evaluations**. Programmatic access to evaluation scores is available through the Analytics API.
+</Note>

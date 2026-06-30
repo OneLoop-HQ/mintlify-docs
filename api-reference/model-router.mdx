@@ -1,0 +1,374 @@
+---
+title: "Model Router: Configure LLM Routing and Fallbacks"
+sidebarTitle: "Model Router"
+description: "List available models, create router configs with fallback chains, invoke models directly, and review fallback audit events."
+---
+
+## Overview
+
+The Feather Model Router manages which LLMs your agents use, how they fall back when a model is unavailable, and how you invoke models directly. You define a router config with an ordered `model_chain` — Feather tries each model in sequence until one succeeds. Fallback events are logged for auditing.
+
+---
+
+## List Available Models
+
+```
+GET /v1/model-router/models
+```
+
+Returns all LLM models available in your organization, with pricing and capability flags.
+
+### Response: AvailableModel
+
+<ResponseField name="model_identifier" type="string">
+  Unique model identifier used in router configs and invoke calls (e.g. `gpt-4o`, `claude-3-5-sonnet-20241022`).
+</ResponseField>
+
+<ResponseField name="provider" type="string">
+  Model provider (e.g. `openai`, `anthropic`, `google`, `feather`).
+</ResponseField>
+
+<ResponseField name="supports_streaming" type="boolean">
+  Whether the model supports token streaming.
+</ResponseField>
+
+<ResponseField name="supports_tools" type="boolean">
+  Whether the model supports tool/function calling.
+</ResponseField>
+
+<ResponseField name="supports_vision" type="boolean">
+  Whether the model accepts image inputs.
+</ResponseField>
+
+<ResponseField name="input_price_per_1m" type="number">
+  Cost in USD per 1 million input tokens.
+</ResponseField>
+
+<ResponseField name="output_price_per_1m" type="number">
+  Cost in USD per 1 million output tokens.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/model-router/models \
+  -H "x-api-key: <key>"
+```
+
+```json Response
+{
+  "models": [
+    {
+      "model_identifier": "gpt-4o",
+      "provider": "openai",
+      "supports_streaming": true,
+      "supports_tools": true,
+      "supports_vision": true,
+      "input_price_per_1m": 2.50,
+      "output_price_per_1m": 10.00
+    },
+    {
+      "model_identifier": "claude-3-5-sonnet-20241022",
+      "provider": "anthropic",
+      "supports_streaming": true,
+      "supports_tools": true,
+      "supports_vision": true,
+      "input_price_per_1m": 3.00,
+      "output_price_per_1m": 15.00
+    }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+## Get Model Catalog
+
+```
+GET /v1/model-router/catalog
+```
+
+Returns the full model catalog enriched with `role_defaults` — the default model assigned to each runtime role (e.g. `agent_primary`, `policy_judge`, `summarizer`).
+
+### Response
+
+<ResponseField name="models" type="array of AvailableModel">
+  Same as `GET /v1/model-router/models`.
+</ResponseField>
+
+<ResponseField name="role_defaults" type="array of objects">
+  Each entry: `role` (string) and `model_identifier` (string).
+</ResponseField>
+
+---
+
+## Router Configs
+
+A router config is a named model chain with fallback logic. Agents reference a router config by ID. Marking a config as `is_default` applies it to all agents that don't have an explicit config assignment.
+
+### Create a Router Config
+
+```
+POST /v1/model-router/configs
+```
+
+#### Request Body
+
+<ParamField body="name" type="string" required>
+  Config name, e.g. `GPT-4o with Claude fallback`.
+</ParamField>
+
+<ParamField body="description" type="string">
+  What this config is used for.
+</ParamField>
+
+<ParamField body="is_default" type="boolean">
+  Set as the organization default config.
+</ParamField>
+
+<ParamField body="model_chain" type="array of objects" required>
+  Ordered list of models to try. Each entry:
+  - `model` (string, required) — Model identifier.
+  - `config` (object) — Per-model inference parameters:
+    - `temperature` (number)
+    - `max_tokens` (integer)
+    - `reasoning_effort` (string) — `low`, `medium`, or `high` for models that support it.
+    - `thinking_budget` (integer) — Token budget for extended reasoning (Anthropic extended thinking).
+    - `request_timeout_ms` (integer) — Timeout before falling back to the next model.
+</ParamField>
+
+#### Example
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/model-router/configs \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "GPT-4o with Claude fallback",
+    "is_default": true,
+    "model_chain": [
+      {
+        "model": "gpt-4o",
+        "config": {
+          "temperature": 0.3,
+          "max_tokens": 1024,
+          "request_timeout_ms": 8000
+        }
+      },
+      {
+        "model": "claude-3-5-sonnet-20241022",
+        "config": {
+          "temperature": 0.3,
+          "max_tokens": 1024,
+          "request_timeout_ms": 10000
+        }
+      }
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "rconf_aa00bb11-0000-0000-0000-000000000090",
+  "name": "GPT-4o with Claude fallback",
+  "is_default": true,
+  "model_chain": [...],
+  "created_at": "2024-06-01T09:00:00Z"
+}
+```
+</CodeGroup>
+
+### List Router Configs
+
+```
+GET /v1/model-router/configs
+```
+
+### Get a Router Config
+
+```
+GET /v1/model-router/configs/{id}
+```
+
+### Update a Router Config
+
+```
+PUT /v1/model-router/configs/{id}
+```
+
+Replaces all fields. Same body as [Create a Router Config](#create-a-router-config).
+
+### Delete a Router Config
+
+```
+DELETE /v1/model-router/configs/{id}
+```
+
+---
+
+## Invoke a Model
+
+```
+POST /v1/model-router/invoke
+```
+
+Calls a model directly through the router, respecting the fallback chain. Useful for testing or building custom pipelines.
+
+### Request Body
+
+<ParamField body="messages" type="array of objects" required>
+  Conversation messages in standard role/content format: `[{"role": "user", "content": "Hello"}]`.
+</ParamField>
+
+<ParamField body="router_config_id" type="string (uuid)">
+  The router config to use. If omitted, the organization default config is used.
+</ParamField>
+
+<ParamField body="config_overrides" type="object">
+  Override specific inference parameters (e.g. `temperature`, `max_tokens`) for this request without changing the router config.
+</ParamField>
+
+<ParamField body="session_id" type="string (uuid)">
+  Associate this invoke with a session for billing attribution and logging.
+</ParamField>
+
+<ParamField body="smart_routing" type="boolean">
+  When `true`, Feather selects the best model for the request based on content type and capabilities. Default: `false`.
+</ParamField>
+
+### Response: ModelResponse
+
+<ResponseField name="content" type="string">
+  The model's response text.
+</ResponseField>
+
+<ResponseField name="model_identifier" type="string">
+  The model that actually served the response (may differ from the first in the chain if fallback occurred).
+</ResponseField>
+
+<ResponseField name="input_tokens" type="integer">
+  Input token count.
+</ResponseField>
+
+<ResponseField name="output_tokens" type="integer">
+  Output token count.
+</ResponseField>
+
+<ResponseField name="total_tokens" type="integer">
+  Total tokens used.
+</ResponseField>
+
+<ResponseField name="total_cost_usd" type="number">
+  Estimated cost in USD for this request.
+</ResponseField>
+
+<ResponseField name="latency_ms" type="integer">
+  Total wall-clock latency in milliseconds.
+</ResponseField>
+
+<ResponseField name="tool_calls" type="array of objects">
+  Tool calls requested by the model, if any.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/model-router/invoke \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      { "role": "system", "content": "You are a helpful assistant." },
+      { "role": "user", "content": "What is the capital of France?" }
+    ],
+    "router_config_id": "rconf_aa00bb11-0000-0000-0000-000000000090"
+  }'
+```
+
+```json Response
+{
+  "content": "The capital of France is Paris.",
+  "model_identifier": "gpt-4o",
+  "input_tokens": 22,
+  "output_tokens": 9,
+  "total_tokens": 31,
+  "total_cost_usd": 0.000091,
+  "latency_ms": 412,
+  "tool_calls": []
+}
+```
+</CodeGroup>
+
+---
+
+## Stream a Model Response
+
+```
+POST /v1/model-router/stream
+```
+
+Same as `/invoke` but returns a Server-Sent Events (SSE) stream. Each `data:` event contains a partial content delta. The final event includes the full `ModelResponse` metadata.
+
+<Note>
+  Set the `Accept: text/event-stream` header and handle the SSE connection accordingly. Most HTTP clients require a streaming-aware library for this endpoint.
+</Note>
+
+---
+
+## Fallback Events Audit Log
+
+```
+GET /v1/model-router/fallback-events
+```
+
+Returns a log of every model fallback that occurred — when the router had to skip a model and try the next one in the chain.
+
+### Response fields per event
+
+<ResponseField name="failed_model" type="string">
+  The model that was tried and failed.
+</ResponseField>
+
+<ResponseField name="next_model" type="string">
+  The model that was tried next.
+</ResponseField>
+
+<ResponseField name="error_class" type="string">
+  Why the model failed: `timeout`, `rate_limit`, `server_error`, `context_window_exceeded`, `auth_error`.
+</ResponseField>
+
+<ResponseField name="error_message" type="string">
+  Raw error message from the provider.
+</ResponseField>
+
+<ResponseField name="occurred_at" type="string (ISO 8601)">
+  Timestamp of the fallback event.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/model-router/fallback-events \
+  -H "x-api-key: <key>"
+```
+
+```json Response
+{
+  "data": [
+    {
+      "failed_model": "gpt-4o",
+      "next_model": "claude-3-5-sonnet-20241022",
+      "error_class": "timeout",
+      "error_message": "Request timed out after 8000ms",
+      "occurred_at": "2024-06-01T15:32:11Z"
+    }
+  ],
+  "next_cursor": null
+}
+```
+</CodeGroup>

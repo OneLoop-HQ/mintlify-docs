@@ -1,0 +1,413 @@
+---
+title: "API Tools: Create HTTP Callable Tools for Agents"
+sidebarTitle: "Tools"
+description: "Create, version, and manage API tools that agents can call at runtime. Tools support GET/POST/PUT/PATCH/DELETE with variable substitution and response field mapping."
+---
+
+## Overview
+
+API Tools are HTTP endpoints that agents can call at runtime to fetch live data or trigger actions. You define the URL, method, headers, and variable schema once — then agents fill in variable values based on conversation context. Tools are versioned via **revisions**, so you can iterate safely without breaking active deployments.
+
+**Base URL:** `https://api-sandbox.featherhq.com`
+
+---
+
+## Tools
+
+### Create a Tool
+
+```
+POST /v1/tools
+```
+
+<ParamField body="name" type="string" required>
+  A short, unique name for the tool, e.g. `get_order_status`.
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  Describes what the tool does. Shown to the agent LLM to help it decide when to call the tool.
+</ParamField>
+
+<ParamField body="tool_type" type="string" required>
+  Tool category: `api_call` for HTTP integrations, or `call_transfer` for phone call routing tools.
+</ParamField>
+
+<ParamField body="configuration" type="object" required>
+  The HTTP call configuration. See [`APICallConfiguration`](#apicallconfiguration) below.
+</ParamField>
+
+<ParamField body="response_schema" type="object">
+  Defines how to extract fields from the raw response body.
+
+  <Expandable title="response_schema fields">
+    <ParamField body="response_schema.field_mappings" type="object[]">
+      Array of field mapping rules.
+
+      <Expandable title="field_mapping fields">
+        <ParamField body="key" type="string">
+          The output key exposed to the agent.
+        </ParamField>
+        <ParamField body="path" type="string">
+          JSONPath expression pointing to the value in the response body, e.g. `$.data.order.status`.
+        </ParamField>
+        <ParamField body="description" type="string">
+          What this field represents, shown to the agent.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="input_defaults" type="object">
+  Default values for variables. These are used when the agent does not supply a value for a non-required variable.
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Arbitrary key-value pairs for your own tracking purposes. Not exposed to agents.
+</ParamField>
+
+---
+
+### List Tools
+
+```
+GET /v1/tools
+```
+
+Returns a cursor-paginated list of tools.
+
+<ParamField query="cursor" type="string">
+  Pagination cursor from a previous response.
+</ParamField>
+
+<ParamField query="tool_type" type="string">
+  Filter by `api_call` or `call_transfer`.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+  Results per page. Max `100`.
+</ParamField>
+
+---
+
+### Get a Tool
+
+```
+GET /v1/tools/{id}
+```
+
+Returns the full tool, including the `active_revision` object.
+
+<ResponseField name="id" type="string">
+  Tool identifier.
+</ResponseField>
+<ResponseField name="name" type="string">
+  Tool name.
+</ResponseField>
+<ResponseField name="description" type="string">
+  Tool description.
+</ResponseField>
+<ResponseField name="tool_type" type="string">
+  `api_call` or `call_transfer`.
+</ResponseField>
+<ResponseField name="enabled" type="boolean">
+  Whether the tool is available to agents.
+</ResponseField>
+<ResponseField name="active_revision" type="object">
+  The currently active revision. Has the same shape as a `ToolRevisionResponse`.
+</ResponseField>
+<ResponseField name="created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+---
+
+### Update a Tool
+
+```
+PUT /v1/tools/{id}
+```
+
+Update the tool's name, description, or metadata. To change the configuration, create a new revision instead.
+
+---
+
+### Delete a Tool
+
+```
+DELETE /v1/tools/{id}
+```
+
+Permanently deletes the tool and all its revisions.
+
+<Warning>
+  Agents that reference a deleted tool will fail at call time. Remove the tool from all agents before deleting.
+</Warning>
+
+---
+
+### Enable / Disable a Tool
+
+```
+POST /v1/tools/{id}/enable
+POST /v1/tools/{id}/disable
+```
+
+Disabled tools are not callable by agents. Use this to temporarily take a tool offline without deleting it.
+
+---
+
+## Revisions
+
+Each revision is a versioned snapshot of the tool's `configuration` and `response_schema`. Creating a new revision does not activate it — you must call `set-active-revision` explicitly.
+
+### Create a Revision
+
+```
+POST /v1/tools/{id}/revisions
+```
+
+<ParamField body="configuration" type="object" required>
+  The new `APICallConfiguration` for this revision.
+</ParamField>
+
+<ParamField body="response_schema" type="object">
+  Updated field mappings for this revision.
+</ParamField>
+
+<ParamField body="change_notes" type="string">
+  Human-readable description of what changed.
+</ParamField>
+
+---
+
+### List Revisions
+
+```
+GET /v1/tools/{id}/revisions
+```
+
+---
+
+### Get a Revision
+
+```
+GET /v1/tools/revisions/{id}
+```
+
+---
+
+### Update a Revision
+
+```
+PUT /v1/tools/revisions/{id}
+```
+
+Updates the revision's configuration. Only allowed for revisions that are not yet active.
+
+---
+
+### Delete a Revision
+
+```
+DELETE /v1/tools/revisions/{id}
+```
+
+Cannot delete the active revision.
+
+---
+
+### Set Active Revision
+
+```
+POST /v1/tools/{id}/set-active-revision
+```
+
+<ParamField body="revision_id" type="string" required>
+  The revision to promote to active.
+</ParamField>
+
+<Tip>
+  Test a revision using `POST /v1/tools/{id}/revisions/{revision_id}/test` before promoting it to active to avoid regressions.
+</Tip>
+
+---
+
+## `APICallConfiguration`
+
+The `configuration` object fully describes the outbound HTTP request.
+
+<ParamField body="url" type="string" required>
+  The request URL. Supports `{{variable_name}}` placeholders for path or query substitution.
+
+  ```
+  https://api.example.com/orders/{{order_id}}/status
+  ```
+</ParamField>
+
+<ParamField body="method" type="string" required>
+  HTTP method: `GET`, `POST`, `PUT`, `PATCH`, or `DELETE`.
+</ParamField>
+
+<ParamField body="headers" type="object[]">
+  HTTP headers to include in every request.
+
+  <Expandable title="header fields">
+    <ParamField body="key" type="string">
+      Header name, e.g. `Authorization`.
+    </ParamField>
+    <ParamField body="value" type="string">
+      Header value. Supports `{{variable_name}}` placeholders.
+    </ParamField>
+    <ParamField body="secure" type="boolean">
+      When `true`, the value is stored encrypted and is never returned in API responses.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="query_params" type="object[]">
+  Query string parameters. Each has `key` and `value` fields; `value` supports `{{variable_name}}` placeholders.
+</ParamField>
+
+<ParamField body="body" type="object">
+  Request body as a JSON object. Supports `{{variable_name}}` placeholder values at any depth.
+</ParamField>
+
+<ParamField body="timeout" type="integer" default="10000">
+  Request timeout in milliseconds. Max `30000`.
+</ParamField>
+
+<ParamField body="variables" type="object[]">
+  Declares the variables the agent must (or can optionally) supply when calling the tool.
+
+  <Expandable title="variable fields">
+    <ParamField body="name" type="string">
+      Variable name. Must match placeholders in `url`, `headers`, `query_params`, or `body`.
+    </ParamField>
+    <ParamField body="type" type="string">
+      Data type: `string`, `number`, `boolean`, or `array`.
+    </ParamField>
+    <ParamField body="description" type="string">
+      Description shown to the agent LLM to help it extract the correct value.
+    </ParamField>
+    <ParamField body="required" type="boolean" default="true">
+      If `true`, the agent must provide a value before the tool can be called.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="retry" type="object">
+  Retry policy for failed requests.
+
+  <Expandable title="retry fields">
+    <ParamField body="max_attempts" type="integer" default="1">
+      Maximum number of attempts including the initial request.
+    </ParamField>
+    <ParamField body="retry_on" type="integer[]">
+      HTTP status codes that should trigger a retry, e.g. `[429, 503]`.
+    </ParamField>
+    <ParamField body="backoff_ms" type="integer" default="500">
+      Base delay between retries in milliseconds.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## Example: Order Status Tool
+
+This example creates a tool that fetches an order's status from an e-commerce API.
+
+<CodeGroup>
+
+```bash Create tool
+curl -X POST https://api-sandbox.featherhq.com/v1/tools \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "get_order_status",
+    "description": "Retrieves the current status and estimated delivery date for a customer order. Call this when a customer asks about their order.",
+    "tool_type": "api_call",
+    "configuration": {
+      "url": "https://api.example.com/orders/{{order_id}}",
+      "method": "GET",
+      "headers": [
+        { "key": "Authorization", "value": "Bearer {{api_token}}", "secure": true }
+      ],
+      "timeout": 8000,
+      "variables": [
+        {
+          "name": "order_id",
+          "type": "string",
+          "description": "The order ID from the customer, usually in the format ORD-XXXXX.",
+          "required": true
+        },
+        {
+          "name": "api_token",
+          "type": "string",
+          "description": "Internal API token. Do not ask the user for this.",
+          "required": true
+        }
+      ],
+      "retry": {
+        "max_attempts": 2,
+        "retry_on": [429, 503],
+        "backoff_ms": 1000
+      }
+    },
+    "response_schema": {
+      "field_mappings": [
+        {
+          "key": "order_status",
+          "path": "$.data.status",
+          "description": "Current status of the order, e.g. processing, shipped, delivered."
+        },
+        {
+          "key": "estimated_delivery",
+          "path": "$.data.estimated_delivery_date",
+          "description": "Estimated delivery date in ISO 8601 format."
+        }
+      ]
+    },
+    "input_defaults": {
+      "api_token": "live_token_abc123"
+    }
+  }'
+```
+
+```bash List revisions
+curl https://api-sandbox.featherhq.com/v1/tools/tool_7a3b1c9d/revisions \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+```bash Set active revision
+curl -X POST https://api-sandbox.featherhq.com/v1/tools/tool_7a3b1c9d/set-active-revision \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "revision_id": "rev_2f4e8a6b" }'
+```
+
+</CodeGroup>
+
+### Create Tool Response
+
+```json
+{
+  "id": "tool_7a3b1c9d",
+  "name": "get_order_status",
+  "description": "Retrieves the current status and estimated delivery date for a customer order.",
+  "tool_type": "api_call",
+  "enabled": true,
+  "active_revision": {
+    "id": "rev_1a2b3c4d",
+    "version": 1,
+    "change_notes": null,
+    "created_at": "2024-06-01T09:00:00Z"
+  },
+  "created_at": "2024-06-01T09:00:00Z"
+}
+```
+
+<Note>
+  Secure header values (e.g. API tokens stored with `"secure": true`) are never returned in any API response. They are write-only.
+</Note>

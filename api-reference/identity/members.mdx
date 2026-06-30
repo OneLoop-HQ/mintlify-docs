@@ -1,0 +1,188 @@
+---
+title: "Organization Members: List Users in Your Org"
+sidebarTitle: "Members"
+description: "List all members in your organization, filter by role, and retrieve identity details for each member."
+---
+
+The members endpoint returns a paginated list of all users who belong to your organization. Use it to audit access, build admin dashboards, or synchronize member data with an external directory.
+
+Only `org:admin` callers may access this endpoint.
+
+---
+
+## GET /v1/identity/org/members
+
+List all organization members, with optional role filtering and cursor-based pagination.
+
+```
+GET https://api-sandbox.featherhq.com/v1/identity/org/members
+```
+
+### Query Parameters
+
+<ParamField query="role" type="string">
+  Filter results to members with a specific role. One of: `org:admin`, `org:member`, `org:viewer`. Omit to return all roles.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Opaque pagination cursor from the previous response's `next_cursor` field. Omit to start from the beginning.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Number of records to return per page. Default: `20`. Maximum: `100`.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL — All Members
+curl --request GET \
+  --url 'https://api-sandbox.featherhq.com/v1/identity/org/members?limit=50' \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+```bash cURL — Filter by Role
+curl --request GET \
+  --url 'https://api-sandbox.featherhq.com/v1/identity/org/members?role=org:admin' \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+```python Python
+import httpx
+
+res = httpx.get(
+    "https://api-sandbox.featherhq.com/v1/identity/org/members",
+    headers={"x-api-key": "YOUR_API_KEY"},
+    params={"role": "org:member", "limit": 25},
+)
+print(res.json())
+```
+
+</CodeGroup>
+
+### Response Fields
+
+<ResponseField name="items" type="array" required>
+  <Expandable title="OrgMemberResponse">
+    <ResponseField name="id" type="string (uuid)" required>
+      Feather-internal UUID for this member record.
+    </ResponseField>
+
+    <ResponseField name="organization_id" type="string (uuid)" required>
+      The UUID of the organization this member belongs to.
+    </ResponseField>
+
+    <ResponseField name="clerk_user_id" type="string" required>
+      The Clerk identity provider ID for this user.
+    </ResponseField>
+
+    <ResponseField name="role" type="string" required>
+      The member's assigned role. One of:
+      - `org:admin` — Full administrative access.
+      - `org:member` — Standard read/write access to conversations and agents.
+      - `org:viewer` — Read-only access.
+    </ResponseField>
+
+    <ResponseField name="display_name" type="string | null">
+      The user's human-readable display name.
+    </ResponseField>
+
+    <ResponseField name="email" type="string | null">
+      The user's verified email address.
+    </ResponseField>
+
+    <ResponseField name="is_active" type="boolean" required>
+      Whether this member's account is currently active. Deactivated members cannot authenticate.
+    </ResponseField>
+
+    <ResponseField name="created_at" type="string (ISO 8601)" required>
+      When this user joined the organization.
+    </ResponseField>
+
+    <ResponseField name="updated_at" type="string (ISO 8601)" required>
+      When this member record was last modified.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string | null" required>
+  Pagination cursor for the next page. Pass as the `cursor` query parameter on your next request. `null` when you have reached the last page.
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "items": [
+    {
+      "id": "e5f6a7b8-2222-4cde-aaaa-112233445566",
+      "organization_id": "d7e2b3c1-0a4f-4e88-b7d5-9f3c2a1e6d04",
+      "clerk_user_id": "user_2abc123XYZdef456",
+      "role": "org:admin",
+      "display_name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "is_active": true,
+      "created_at": "2023-11-01T08:00:00Z",
+      "updated_at": "2024-05-10T13:22:00Z"
+    },
+    {
+      "id": "f6a7b8c9-3333-4def-bbbb-223344556677",
+      "organization_id": "d7e2b3c1-0a4f-4e88-b7d5-9f3c2a1e6d04",
+      "clerk_user_id": "user_3bcd234ABCghi789",
+      "role": "org:member",
+      "display_name": "Grace Hopper",
+      "email": "grace@example.com",
+      "is_active": true,
+      "created_at": "2024-01-20T11:15:00Z",
+      "updated_at": "2024-01-20T11:15:00Z"
+    },
+    {
+      "id": "a7b8c9d0-4444-4ef0-cccc-334455667788",
+      "organization_id": "d7e2b3c1-0a4f-4e88-b7d5-9f3c2a1e6d04",
+      "clerk_user_id": "user_4cde345CDEjkl012",
+      "role": "org:viewer",
+      "display_name": "Alan Turing",
+      "email": "alan@example.com",
+      "is_active": false,
+      "created_at": "2024-02-14T09:30:00Z",
+      "updated_at": "2024-03-01T10:00:00Z"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+### Paginating Through All Members
+
+<CodeGroup>
+
+```python Python — Paginate All Members
+import httpx
+
+base_url = "https://api-sandbox.featherhq.com/v1/identity/org/members"
+headers = {"x-api-key": "YOUR_API_KEY"}
+cursor = None
+all_members = []
+
+while True:
+    params = {"limit": 100}
+    if cursor:
+        params["cursor"] = cursor
+
+    res = httpx.get(base_url, headers=headers, params=params)
+    data = res.json()
+    all_members.extend(data["items"])
+
+    cursor = data.get("next_cursor")
+    if not cursor:
+        break
+
+print(f"Total members: {len(all_members)}")
+```
+
+</CodeGroup>
+
+<Note>
+  Member management (inviting, removing, or changing roles) is handled via the Feather dashboard or the Clerk-powered admin console, not through this API. This endpoint is read-only.
+</Note>

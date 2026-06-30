@@ -1,0 +1,300 @@
+---
+title: "Organization Settings and Warm-Transfer Configuration"
+sidebarTitle: "Organization"
+description: "GET and PUT your organization's settings, including knowledge base ACL config, retry settings, and warm-transfer bridge numbers."
+---
+
+The organization identity endpoints let you read and update your org-level settings — including knowledge base classification rules, retry behavior, and the warm-transfer bridge numbers that Feather dials when escalating calls to a live agent.
+
+All endpoints require the `x-api-key` header and an `org:admin` role unless noted otherwise.
+
+---
+
+## GET /v1/identity/org
+
+Retrieve your organization's current configuration.
+
+```
+GET https://api-sandbox.featherhq.com/v1/identity/org
+```
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url https://api-sandbox.featherhq.com/v1/identity/org \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+```python Python
+import httpx
+
+res = httpx.get(
+    "https://api-sandbox.featherhq.com/v1/identity/org",
+    headers={"x-api-key": "YOUR_API_KEY"},
+)
+print(res.json())
+```
+
+</CodeGroup>
+
+### Response Fields
+
+<ResponseField name="id" type="string (uuid)" required>
+  The organization's unique identifier.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable organization name.
+</ResponseField>
+
+<ResponseField name="slug" type="string" required>
+  URL-safe identifier used in Feather dashboard links and webhooks.
+</ResponseField>
+
+<ResponseField name="plan" type="string" required>
+  The current subscription plan (e.g., `starter`, `growth`, `enterprise`).
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean" required>
+  Whether the organization account is active. Inactive orgs cannot process conversations.
+</ResponseField>
+
+<ResponseField name="settings" type="object">
+  <Expandable title="OrgSettings">
+    <ResponseField name="retry_config" type="object">
+      <Expandable title="RetryConfig">
+        <ResponseField name="max_retries" type="integer">
+          Maximum number of LLM call retries on transient failure.
+        </ResponseField>
+        <ResponseField name="retry_delay_ms" type="integer">
+          Base delay in milliseconds between retry attempts.
+        </ResponseField>
+        <ResponseField name="backoff_multiplier" type="number">
+          Exponential backoff multiplier applied to `retry_delay_ms` on each subsequent retry.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="kb_role_clearance_map" type="object">
+      A map of role name → minimum clearance level integer. Example: `{"org:viewer": 0, "org:member": 50, "org:admin": 100}`.
+    </ResponseField>
+
+    <ResponseField name="kb_classification_mode" type="string">
+      How the knowledge base classifies content visibility. One of `strict` (exact clearance match required) or `cumulative` (clearance is additive).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "id": "d7e2b3c1-0a4f-4e88-b7d5-9f3c2a1e6d04",
+  "name": "Acme Support",
+  "slug": "acme-support",
+  "plan": "growth",
+  "is_active": true,
+  "settings": {
+    "retry_config": {
+      "max_retries": 3,
+      "retry_delay_ms": 500,
+      "backoff_multiplier": 2.0
+    },
+    "kb_role_clearance_map": {
+      "org:viewer": 0,
+      "org:member": 50,
+      "org:admin": 100
+    },
+    "kb_classification_mode": "strict"
+  }
+}
+```
+
+---
+
+## PUT /v1/identity/org
+
+Update your organization's settings. Only `org:admin` callers may use this endpoint.
+
+```
+PUT https://api-sandbox.featherhq.com/v1/identity/org
+```
+
+### Request Body
+
+<ParamField body="retry_config" type="object">
+  <Expandable title="RetryConfig">
+    <ParamField body="max_retries" type="integer">
+      Maximum retry attempts on transient LLM failure. Default: `3`.
+    </ParamField>
+    <ParamField body="retry_delay_ms" type="integer">
+      Base retry delay in milliseconds. Default: `500`.
+    </ParamField>
+    <ParamField body="backoff_multiplier" type="number">
+      Exponential backoff multiplier. Default: `2.0`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="kb_role_clearance_map" type="object">
+  Map of role identifiers to integer clearance levels (0–100). Roles not included in this map inherit the organization default.
+</ParamField>
+
+<ParamField body="kb_classification_mode" type="string">
+  One of `strict` or `cumulative`. Controls how clearance levels are compared against article requirements.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request PUT \
+  --url https://api-sandbox.featherhq.com/v1/identity/org \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "retry_config": {
+      "max_retries": 5,
+      "retry_delay_ms": 250,
+      "backoff_multiplier": 1.5
+    },
+    "kb_role_clearance_map": {
+      "org:viewer": 0,
+      "org:member": 40,
+      "org:admin": 100
+    },
+    "kb_classification_mode": "strict"
+  }'
+```
+
+</CodeGroup>
+
+Returns the updated `OrganizationResponse` (same shape as GET).
+
+---
+
+## GET /v1/identity/org/warm-transfer
+
+Retrieve the webhook URL Feather posts to when a warm-transfer is initiated. Use this URL to configure your telephony provider.
+
+```
+GET https://api-sandbox.featherhq.com/v1/identity/org/warm-transfer
+```
+
+### Response Fields
+
+<ResponseField name="bridge_webhook_url" type="string" required>
+  The HTTPS URL that receives warm-transfer payloads. Configure this in your Twilio or telephony dashboard as the call status webhook.
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "bridge_webhook_url": "https://hooks.featherhq.com/warm-transfer/d7e2b3c1-0a4f-4e88-b7d5-9f3c2a1e6d04"
+}
+```
+
+---
+
+## GET /v1/identity/org/bridge-numbers
+
+List all Twilio bridge numbers imported into your organization for warm-transfer routing.
+
+```
+GET https://api-sandbox.featherhq.com/v1/identity/org/bridge-numbers
+```
+
+### Response Fields
+
+<ResponseField name="items" type="array">
+  <Expandable title="BridgeNumber">
+    <ResponseField name="id" type="string (uuid)">
+      Internal Feather ID for this bridge number entry.
+    </ResponseField>
+    <ResponseField name="phone_number" type="string">
+      The E.164-formatted phone number (e.g., `+15550001234`).
+    </ResponseField>
+    <ResponseField name="friendly_name" type="string">
+      Human-readable label for the number.
+    </ResponseField>
+    <ResponseField name="twilio_sid" type="string">
+      The Twilio SID associated with this number.
+    </ResponseField>
+    <ResponseField name="created_at" type="string (ISO 8601)">
+      Timestamp when this number was imported.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## POST /v1/identity/org/bridge-numbers
+
+Import one or more Twilio bridge numbers into Feather for use in warm-transfer flows.
+
+```
+POST https://api-sandbox.featherhq.com/v1/identity/org/bridge-numbers
+```
+
+### Request Body
+
+<ParamField body="phone_numbers" type="array of strings" required>
+  A list of E.164-formatted phone numbers to import (e.g., `["+15550001234"]`). Each number must be provisioned in your connected Twilio account.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url https://api-sandbox.featherhq.com/v1/identity/org/bridge-numbers \
+  --header 'x-api-key: YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "phone_numbers": ["+15550001234", "+15550005678"]
+  }'
+```
+
+</CodeGroup>
+
+Returns an array of created `BridgeNumber` objects.
+
+---
+
+## DELETE /v1/identity/org/bridge-numbers/{id}
+
+Remove a bridge number from your organization. This does not release the number from Twilio.
+
+```
+DELETE https://api-sandbox.featherhq.com/v1/identity/org/bridge-numbers/{id}
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string (uuid)" required>
+  The Feather-internal ID of the bridge number to delete. Retrieve this from the list endpoint.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url https://api-sandbox.featherhq.com/v1/identity/org/bridge-numbers/a1b2c3d4-0000-4abc-9def-111213141516 \
+  --header 'x-api-key: YOUR_API_KEY'
+```
+
+</CodeGroup>
+
+Returns `204 No Content` on success.
+
+<Warning>
+  Deleting a bridge number that is actively referenced by a live warm-transfer flow will cause those transfers to fail. Verify no active agents are using the number before removing it.
+</Warning>

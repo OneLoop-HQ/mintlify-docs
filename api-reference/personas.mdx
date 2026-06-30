@@ -1,0 +1,352 @@
+---
+title: "Personas: Create AI Simulation Personas"
+sidebarTitle: "Personas"
+description: "Define customer personas for simulation testing. Each persona has a body prompt, behavioral config, and voice settings for realistic call simulations."
+---
+
+Personas represent **simulated end-users** used in conversation simulations and automated regression tests. Each persona has a personality, behavioural profile, and voice-channel settings so the platform can role-play as a realistic customer calling or chatting with your agents.
+
+You can create **custom personas** for your workspace or browse and install **library personas** provided by the Feather platform.
+
+---
+
+## Create a Persona
+
+```
+POST https://api-sandbox.featherhq.com/v1/personas
+```
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Display name for the persona (e.g. `"Frustrated Billing Customer"`).
+</ParamField>
+
+<ParamField body="description" type="string">
+  Short description for internal documentation.
+</ParamField>
+
+<ParamField body="is_active" type="boolean">
+  Whether the persona is available for use in new simulations. Defaults to `true`.
+</ParamField>
+
+<ParamField body="body" type="string" required>
+  The core persona prompt injected into the simulation LLM. Describe the persona's background, emotional state, goal, and communication style.
+
+  ```
+  You are Alex, a small business owner who received a double charge on your last invoice.
+  You are frustrated but polite. Your goal is to get a refund confirmed before the end of the call.
+  If the agent is unhelpful after two attempts, escalate your tone.
+  ```
+</ParamField>
+
+<ParamField body="traits" type="object">
+  Key-value pairs of freeform trait labels. These are not interpreted by the runtime but useful for filtering and organisation.
+
+  ```json
+  {
+    "sentiment": "frustrated",
+    "industry": "small business",
+    "issue_type": "billing"
+  }
+  ```
+</ParamField>
+
+<ParamField body="behavior_config" type="object">
+  Detailed behavioural settings controlling how the persona acts during a simulation session. See [PersonaBehaviorConfig](#personabehaviorconfig) below.
+</ParamField>
+
+### Response
+
+Returns a **PersonaResponse** object.
+
+<ResponseField name="id" type="string">
+  Unique persona ID.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Persona display name.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Persona description.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Availability status.
+</ResponseField>
+
+<ResponseField name="body" type="string">
+  Core persona prompt.
+</ResponseField>
+
+<ResponseField name="traits" type="object">
+  Freeform trait key-value pairs.
+</ResponseField>
+
+<ResponseField name="behavior_config" type="object">
+  Resolved behaviour configuration (defaults filled in).
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 last-update timestamp.
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/personas \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Frustrated Billing Customer",
+    "is_active": true,
+    "body": "You are Alex, a small business owner who received a double charge. You are frustrated but polite. Goal: confirm a refund before the call ends.",
+    "traits": {
+      "sentiment": "frustrated",
+      "issue_type": "billing"
+    },
+    "behavior_config": {
+      "first_speaker": "persona",
+      "language": "en",
+      "background_noise": "office",
+      "interruption_mode": "low",
+      "backchannel_style": "impatient",
+      "wait_seconds": 8
+    }
+  }'
+```
+
+```python Python
+import httpx
+
+resp = httpx.post(
+    "https://api-sandbox.featherhq.com/v1/personas",
+    headers={"x-api-key": "<key>"},
+    json={
+        "name": "Frustrated Billing Customer",
+        "is_active": True,
+        "body": "You are Alex, a small business owner who received a double charge...",
+        "behavior_config": {
+            "first_speaker": "persona",
+            "language": "en",
+            "interruption_mode": "low",
+        },
+    },
+)
+print(resp.json())
+```
+</CodeGroup>
+
+---
+
+## List Personas
+
+```
+GET https://api-sandbox.featherhq.com/v1/personas
+```
+
+Returns a cursor-paginated list of personas in your workspace.
+
+<ParamField query="q" type="string">
+  Search by name or description.
+</ParamField>
+
+<ParamField query="is_active" type="boolean">
+  Filter by active status. Omit to return all.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor from a previous response.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Results per page. Default `20`, max `100`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl "https://api-sandbox.featherhq.com/v1/personas?is_active=true&limit=20" \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## Get a Persona
+
+```
+GET https://api-sandbox.featherhq.com/v1/personas/{id}
+```
+
+<ParamField path="id" type="string" required>
+  Persona ID.
+</ParamField>
+
+---
+
+## Update a Persona
+
+```
+PUT https://api-sandbox.featherhq.com/v1/personas/{id}
+```
+
+Updates any fields of an existing persona. All fields are optional — only provided fields are changed.
+
+<ParamField path="id" type="string" required>
+  Persona ID.
+</ParamField>
+
+Accepts any subset of the [Create a Persona](#create-a-persona) body fields.
+
+---
+
+## Delete a Persona
+
+```
+DELETE https://api-sandbox.featherhq.com/v1/personas/{id}
+```
+
+Permanently deletes the persona. Simulations that already used this persona retain their historical data.
+
+<Warning>
+  Deleting a persona that is referenced by a scheduled simulation will cause that simulation to fail. Remove the reference before deleting.
+</Warning>
+
+---
+
+## PersonaBehaviorConfig
+
+The `behavior_config` object controls the simulation engine's low-level behaviour for voice and text channels.
+
+<ResponseField name="first_speaker" type="string">
+  Who sends the opening message when the conversation starts:
+  - `persona` — The simulated customer speaks first (typical for outbound scenarios).
+  - `agent` — The agent greets first (typical for inbound/chat scenarios).
+
+  Defaults to `agent`.
+</ResponseField>
+
+<ResponseField name="language" type="string">
+  BCP-47 language tag for the simulation, e.g. `"en"`, `"en-GB"`, `"es"`, `"fr"`. Defaults to `"en"`.
+</ResponseField>
+
+<ResponseField name="background_noise" type="string">
+  Ambient audio track injected into voice simulations:
+  - `none` — Silence (default).
+  - `office` — Keyboard typing, distant chatter.
+  - `cafe` — Coffee shop ambient sounds.
+  - `city` — Street noise, traffic.
+</ResponseField>
+
+<ResponseField name="interruption_mode" type="string">
+  How often the persona interrupts the agent mid-speech (voice channel only):
+  - `off` — Never interrupts (default).
+  - `low` — Rarely interrupts; only when agent pauses.
+  - `medium` — Occasionally interrupts to ask questions.
+  - `high` — Frequently interrupts; impatient behaviour.
+</ResponseField>
+
+<ResponseField name="backchannel_style" type="string">
+  The tone of short acknowledgement utterances (`"mm-hmm"`, `"okay"`, `"right"`) the persona uses:
+  - `neutral` — Matter-of-fact acknowledgements (default).
+  - `impatient` — Short, clipped responses suggesting urgency.
+  - `polite` — Warm, engaged listening cues.
+</ResponseField>
+
+<ResponseField name="wait_seconds" type="number">
+  How many seconds the persona waits for an agent response before repeating or escalating. Defaults to `10`.
+</ResponseField>
+
+<ResponseField name="reaction_pause_ms_min" type="integer">
+  Minimum millisecond delay before the persona responds after the agent finishes speaking. Simulates realistic think time. Defaults to `300`.
+</ResponseField>
+
+<ResponseField name="reaction_pause_ms_max" type="integer">
+  Maximum millisecond delay before the persona responds. The actual delay is sampled uniformly between `min` and `max`. Defaults to `1200`.
+</ResponseField>
+
+<CodeGroup>
+```json Example behavior_config
+{
+  "first_speaker": "persona",
+  "language": "en-US",
+  "background_noise": "cafe",
+  "interruption_mode": "medium",
+  "backchannel_style": "impatient",
+  "wait_seconds": 6,
+  "reaction_pause_ms_min": 400,
+  "reaction_pause_ms_max": 900
+}
+```
+</CodeGroup>
+
+---
+
+## Library Personas
+
+The Feather platform ships a curated set of **library personas** covering common customer archetypes. You can browse them without authentication overhead and install them into your workspace with a single call.
+
+### Browse Library Personas
+
+```
+GET https://api-sandbox.featherhq.com/v1/library/personas
+```
+
+Returns a paginated list of platform-provided personas. Library personas are read-only; to customise one, install it and then edit the workspace copy.
+
+<ParamField query="q" type="string">
+  Search library by name or description.
+</ParamField>
+
+<ParamField query="category" type="string">
+  Filter by persona category tag (e.g. `"billing"`, `"technical"`, `"sales"`).
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl "https://api-sandbox.featherhq.com/v1/library/personas?category=billing" \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+### Install a Library Persona
+
+```
+POST https://api-sandbox.featherhq.com/v1/library/personas/{id}/install
+```
+
+Copies the library persona into your workspace as an editable persona.
+
+<ParamField path="id" type="string" required>
+  Library persona ID.
+</ParamField>
+
+<ParamField body="name" type="string">
+  Override the name for the installed copy. Defaults to the library persona's name.
+</ParamField>
+
+### Response
+
+Returns a **PersonaResponse** for the newly created workspace persona, with `is_active: true`.
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  https://api-sandbox.featherhq.com/v1/library/personas/lib_persona_billing_01/install \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Billing Customer Persona"}'
+```
+</CodeGroup>
+
+<Tip>
+  After installing a library persona, update `body` and `behavior_config` to match your specific product context — generic personas tend to produce less realistic simulations than tailored ones.
+</Tip>

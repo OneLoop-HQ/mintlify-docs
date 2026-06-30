@@ -1,0 +1,290 @@
+---
+title: "Run Multi-Turn Conversations with a Feather Agent"
+sidebarTitle: "Run Conversation"
+description: "Open a conversation session, send user messages, stream agent responses, and close the session when done — with full code examples."
+---
+
+The Feather conversation API is built around **sessions** — stateful containers that track the full message history, context variables, and session lifecycle for a single end-user interaction. Within a session you can send synchronous turns, stream tokens over SSE for real-time UIs, poll for operator replies during a human handoff, and retrieve a paginated transcript at any time. This guide walks through each operation with working curl examples.
+
+---
+
+## Create a session
+
+Open a new conversation session by associating an end user, a channel, and the agent you want to run.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations \
+  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "end_user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "channel": "api",
+    "assistant_id": "agt_01hx3k2mz9vbqwerty123456",
+    "session_type": "live"
+  }'
+```
+</CodeGroup>
+
+```json
+{
+  "id": "conv_01hxabc987654321fedcba00",
+  "end_user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "channel": "api",
+  "assistant_id": "agt_01hx3k2mz9vbqwerty123456",
+  "status": "active",
+  "session_type": "live",
+  "created_at": "2024-05-14T12:00:00Z"
+}
+```
+
+| Field | Values | Description |
+|---|---|---|
+| `channel` | `api`, `web`, `email`, `sms` | The delivery channel for this conversation |
+| `session_type` | `live`, `test` | `live` sessions are persisted and trigger post-session processing; `test` sessions are sandboxed |
+| `status` | `active`, `closed` | Lifecycle state of the conversation |
+
+<Tip>
+  Pass a `context_variables` object in the request body to seed the conversation with pre-known data — for example, `{"customer_name": "Alex", "account_tier": "premium"}`. These values are injected into the agent's system prompt and tool calls automatically.
+</Tip>
+
+---
+
+## Send turns (synchronous)
+
+For standard request/response flows, post a turn and wait for the full agent reply.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/turns \
+  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_message": "I need help with my order #12345"
+  }'
+```
+</CodeGroup>
+
+```json
+{
+  "turn_id": "turn_01hxbcd111222333444aaaa",
+  "text": "I'd be happy to help with order #12345! Let me look that up for you right now.",
+  "session_status": "active",
+  "message_seqs": [2, 3],
+  "tool_calls": [
+    {
+      "tool_name": "lookup_order",
+      "input": { "order_id": "12345" },
+      "output": { "status": "shipped", "estimated_delivery": "2024-05-16" }
+    }
+  ]
+}
+```
+
+| Field | Description |
+|---|---|
+| `turn_id` | Unique identifier for this turn |
+| `text` | The agent's final reply text |
+| `session_status` | Current conversation status (`active`, `waiting_for_human`, `closed`) |
+| `message_seqs` | Sequence numbers of the messages written in this turn — use as a `since_seq` watermark |
+| `tool_calls` | Array of tool invocations made during this turn (present only if the agent called a tool) |
+
+<Note>
+  If `session_status` changes to `waiting_for_human`, the agent has triggered a human handoff. No further AI replies will be generated until an operator responds or the session is returned to the bot.
+</Note>
+
+---
+
+## Stream turns (SSE)
+
+For chat UIs where you want to render tokens as they arrive, use the streaming endpoint. It returns a [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) stream with the same request body as the synchronous turn endpoint.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/turns/stream \
+  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "Content-Type: application/json" \
+  --no-buffer \
+  -d '{
+    "user_message": "What is the status of my order?"
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/turns/stream',
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.FEATHER_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ user_message: 'What is the status of my order?' }),
+  }
+);
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  const chunk = decoder.decode(value);
+  const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+
+  for (const line of lines) {
+    const payload = JSON.parse(line.slice(6)); // strip "data: "
+
+    if (payload.type === 'delta') {
+      process.stdout.write(payload.text); // stream tokens to UI
+    } else if (payload.type === 'complete') {
+      console.log('\n\nFull turn:', payload.turn); // final TurnResponse
+    } else if (payload.type === 'error') {
+      console.error('Stream error:', payload.message);
+    }
+  }
+}
+```
+</CodeGroup>
+
+**Example SSE stream:**
+
+```
+data: {"type":"delta","text":"Your order "}
+data: {"type":"delta","text":"#12345 was "}
+data: {"type":"delta","text":"shipped on May 13th "}
+data: {"type":"delta","text":"and is expected to arrive by May 16th."}
+data: {"type":"complete","turn":{"turn_id":"turn_01hxbcd111222333444bbbb","text":"Your order #12345 was shipped on May 13th and is expected to arrive by May 16th.","session_status":"active","message_seqs":[4,5]}}
+```
+
+**Event types:**
+
+| Event `type` | Description |
+|---|---|
+| `delta` | An incremental text token to append to the UI |
+| `complete` | Final `TurnResponse` object — treat this as the source of truth for `turn_id`, `session_status`, and `tool_calls` |
+| `error` | A fatal error occurred; the stream closes immediately after this event |
+
+<Warning>
+  Always handle the `error` event type explicitly. If the stream closes without a `complete` event, assume the turn failed and surface an appropriate message to the user.
+</Warning>
+
+---
+
+## Poll messages (for async channels)
+
+When your agent is connected to an asynchronous channel (email, SMS, or a human handoff queue) you need to poll for new messages rather than waiting on an open HTTP connection.
+
+<CodeGroup>
+```bash cURL
+curl "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/messages?since_seq=-1" \
+  -H "Authorization: Bearer $FEATHER_API_KEY"
+```
+</CodeGroup>
+
+```json
+{
+  "session_status": "waiting_for_human",
+  "next_seq": 7,
+  "messages": [
+    {
+      "seq": 5,
+      "role": "agent",
+      "text": "I'm connecting you with a support specialist now. Please hold on.",
+      "created_at": "2024-05-14T12:05:00Z"
+    },
+    {
+      "seq": 6,
+      "role": "operator",
+      "text": "Hi, this is Jamie from support. How can I help you today?",
+      "created_at": "2024-05-14T12:06:45Z"
+    }
+  ]
+}
+```
+
+Pass `since_seq=-1` on the first request to retrieve all messages from the beginning. On subsequent polls, pass the `next_seq` value from the previous response to receive only new messages.
+
+<Tip>
+  For human handoff workflows, poll every 2–5 seconds while `session_status` is `waiting_for_human`. Once it returns to `active`, the operator has handed control back to the agent and you can resume normal turn-based messaging.
+</Tip>
+
+---
+
+## Close a session
+
+Signal that the conversation is resolved by closing the session. This triggers any configured post-session webhooks, saves the conversation to long-term memory, and makes the session eligible for analytics processing.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/close \
+  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "resolved"
+  }'
+```
+</CodeGroup>
+
+```json
+{
+  "id": "conv_01hxabc987654321fedcba00",
+  "session_status": "closed",
+  "closed_at": "2024-05-14T12:15:00Z",
+  "reason": "resolved"
+}
+```
+
+<Note>
+  A session **must be closed** before it can be deleted. Attempting to delete an active session will return a `409 Conflict` error.
+</Note>
+
+---
+
+## Retrieve transcript
+
+Fetch a paginated list of all turns in a conversation — useful for post-session review, debugging, or exporting conversation logs.
+
+<CodeGroup>
+```bash cURL
+curl "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/turns?limit=20" \
+  -H "Authorization: Bearer $FEATHER_API_KEY"
+```
+</CodeGroup>
+
+```json
+{
+  "turns": [
+    {
+      "turn_id": "turn_01hxbcd111222333444aaaa",
+      "user_message": "I need help with my order #12345",
+      "text": "I'd be happy to help with order #12345! Let me look that up for you right now.",
+      "created_at": "2024-05-14T12:01:00Z"
+    },
+    {
+      "turn_id": "turn_01hxbcd111222333444bbbb",
+      "user_message": "What is the status of my order?",
+      "text": "Your order #12345 was shipped on May 13th and is expected to arrive by May 16th.",
+      "created_at": "2024-05-14T12:03:30Z"
+    }
+  ],
+  "next_cursor": "dHVybl8wMWh4YmNkMTExMjIyMzMzNDQ0YmJiYg==",
+  "has_more": false
+}
+```
+
+Paginate by passing `cursor=<next_cursor>` and `limit=<n>` as query parameters. When `has_more` is `false`, you've reached the end of the transcript.
+
+---
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="Conversations Concept Guide" icon="comment-dots" href="/concepts/conversations">
+    Deep dive into session lifecycle, message sequencing, and context variable propagation.
+  </Card>
+  <Card title="Human-in-the-Loop" icon="user-headset" href="/guides/human-in-the-loop">
+    Configure escalation rules, operator queues, and handoff triggers for live agent support.
+  </Card>
+</CardGroup>

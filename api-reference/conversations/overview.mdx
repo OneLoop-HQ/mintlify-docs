@@ -1,0 +1,411 @@
+---
+title: "Conversations API: Open and Manage Sessions"
+sidebarTitle: "Conversations"
+description: "Create conversations, list them with filters, close or delete sessions, and retrieve conversation details including eval summaries."
+---
+
+A **conversation** (also called a session) is the top-level container for all messages between an end user and an agent or team. Conversations track status, metadata, and evaluation results across their lifetime.
+
+---
+
+## Session Status Values
+
+| Status | Description |
+|---|---|
+| `active` | Conversation is open and the AI agent is handling it. |
+| `waiting_for_human` | Conversation is queued for a human operator (HITL handoff). |
+| `awaiting_approval` | A workflow approval node is blocking progress pending a decision. |
+| `closed` | Conversation has ended normally. |
+| `failed` | An unrecoverable error ended the conversation. |
+| `expired` | The session timed out due to inactivity. |
+
+---
+
+## Create a Conversation
+
+```
+POST https://api-sandbox.featherhq.com/v1/v2/conversations
+```
+
+Opens a new conversation session. You must supply either `assistant_id` or `team_id`.
+
+### Request Body
+
+<ParamField body="end_user_id" type="string" required>
+  Identifier for the end user (your system's user ID). Used to group conversations per user.
+</ParamField>
+
+<ParamField body="channel" type="string" required>
+  Delivery channel. One of `chat`, `voice`, `email`, or `api`.
+</ParamField>
+
+<ParamField body="assistant_id" type="string">
+  ID of the agent that handles this conversation. Required unless `team_id` is provided.
+</ParamField>
+
+<ParamField body="assistant_revision_id" type="string">
+  Pin the conversation to a specific agent revision. Defaults to the agent's current active revision.
+</ParamField>
+
+<ParamField body="team_id" type="string">
+  ID of the team that handles this conversation. Required unless `assistant_id` is provided.
+</ParamField>
+
+<ParamField body="team_revision_id" type="string">
+  Pin the conversation to a specific team revision. Defaults to the team's current active revision.
+</ParamField>
+
+<ParamField body="session_type" type="string">
+  Session purpose. One of:
+  - `live` — Production conversation with a real end user (default).
+  - `test` — Internal test session; excluded from production analytics.
+  - `simulation` — Automated persona-driven simulation.
+</ParamField>
+
+<ParamField body="external_id" type="string">
+  Your own reference ID for this conversation (e.g. a support ticket ID). Must be unique within your workspace if provided.
+</ParamField>
+
+<ParamField body="subject" type="string">
+  Short subject line for the conversation (useful for email channel).
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Arbitrary key-value pairs stored with the conversation. Not interpreted by the runtime.
+</ParamField>
+
+<ParamField body="tool_input_overrides" type="object">
+  Override specific tool input values for this conversation. Keys are tool names; values are partial input objects merged with the tool's defaults at runtime.
+</ParamField>
+
+<ParamField body="context_variables" type="object">
+  Pre-seed named context variables available to the agent's workflow and prompts from the conversation's first turn.
+
+  ```json
+  {
+    "account_id": "ACC-98765",
+    "plan_tier": "enterprise",
+    "crm_case_id": "CRM-1234"
+  }
+  ```
+</ParamField>
+
+### Response
+
+Returns a **SessionResponse** object.
+
+<ResponseField name="id" type="string">
+  Unique conversation ID.
+</ResponseField>
+
+<ResponseField name="end_user_id" type="string">
+  End user identifier.
+</ResponseField>
+
+<ResponseField name="channel" type="string">
+  Delivery channel.
+</ResponseField>
+
+<ResponseField name="session_type" type="string">
+  `live`, `test`, or `simulation`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current session status (see [Status Values](#session-status-values)).
+</ResponseField>
+
+<ResponseField name="assistant_id" type="string">
+  Active agent ID.
+</ResponseField>
+
+<ResponseField name="team_id" type="string">
+  Active team ID, if applicable.
+</ResponseField>
+
+<ResponseField name="external_id" type="string">
+  Your external reference ID.
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Stored metadata.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp.
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "end_user_id": "user_abc123",
+    "channel": "chat",
+    "assistant_id": "asst_billing_01",
+    "session_type": "live",
+    "context_variables": {
+      "account_id": "ACC-98765"
+    }
+  }'
+```
+
+```python Python
+import httpx
+
+resp = httpx.post(
+    "https://api-sandbox.featherhq.com/v1/v2/conversations",
+    headers={"x-api-key": "<key>"},
+    json={
+        "end_user_id": "user_abc123",
+        "channel": "chat",
+        "assistant_id": "asst_billing_01",
+        "session_type": "live",
+    },
+)
+conv = resp.json()
+conversation_id = conv["id"]
+```
+
+```javascript JavaScript
+const res = await fetch(
+  "https://api-sandbox.featherhq.com/v1/v2/conversations",
+  {
+    method: "POST",
+    headers: {
+      "x-api-key": "<key>",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      end_user_id: "user_abc123",
+      channel: "chat",
+      assistant_id: "asst_billing_01",
+      session_type: "live",
+    }),
+  }
+);
+const conv = await res.json();
+```
+</CodeGroup>
+
+---
+
+## List Conversations
+
+```
+GET https://api-sandbox.featherhq.com/v1/v2/conversations
+```
+
+Returns a cursor-paginated list of conversations. Results are ordered by `created_at` descending.
+
+<ParamField query="status" type="string">
+  Filter by session status. One of `active`, `waiting_for_human`, `awaiting_approval`, `closed`, `failed`, `expired`.
+</ParamField>
+
+<ParamField query="channel" type="string">
+  Filter by channel: `chat`, `voice`, `email`, `api`.
+</ParamField>
+
+<ParamField query="end_user_id" type="string">
+  Return only conversations for this end user.
+</ParamField>
+
+<ParamField query="assigned_agent_id" type="string">
+  Filter by the agent ID handling the conversation.
+</ParamField>
+
+<ParamField query="priority" type="string">
+  Filter by conversation priority: `low`, `normal`, `high`, `urgent`.
+</ParamField>
+
+<ParamField query="started_after" type="string">
+  ISO 8601 datetime. Return conversations created after this timestamp.
+</ParamField>
+
+<ParamField query="started_before" type="string">
+  ISO 8601 datetime. Return conversations created before this timestamp.
+</ParamField>
+
+<ParamField query="q" type="string">
+  Full-text search across conversation subjects and metadata values.
+</ParamField>
+
+<ParamField query="eval_filter" type="string">
+  Filter by evaluation result. One of `passed`, `failed`, `needs_review`, `not_evaluated`.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor from a previous response.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Results per page. Default `20`, max `100`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl "https://api-sandbox.featherhq.com/v1/v2/conversations?status=active&channel=chat&limit=50" \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## Get a Conversation
+
+```
+GET https://api-sandbox.featherhq.com/v1/v2/conversations/{id}
+```
+
+Returns a **SessionDetailResponse** — the full conversation detail including recent turns, evaluation summary, and recording status.
+
+<ParamField path="id" type="string" required>
+  Conversation ID.
+</ParamField>
+
+### SessionDetailResponse Fields
+
+<ResponseField name="id" type="string">
+  Conversation ID.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current session status.
+</ResponseField>
+
+<ResponseField name="channel" type="string">
+  Delivery channel.
+</ResponseField>
+
+<ResponseField name="session_type" type="string">
+  `live`, `test`, or `simulation`.
+</ResponseField>
+
+<ResponseField name="recent_turns" type="array">
+  The last 10 turns of the conversation transcript for quick preview. For the full transcript, use [GET /turns](/api-reference/conversations/turns).
+</ResponseField>
+
+<ResponseField name="eval_summary" type="object">
+  Evaluation results for this conversation, or `null` if no evaluation has run.
+
+  <Expandable title="eval_summary fields">
+    <ResponseField name="overall_result" type="string">
+      `passed`, `failed`, or `needs_review`.
+    </ResponseField>
+    <ResponseField name="score" type="number">
+      Numeric score between `0` and `1`.
+    </ResponseField>
+    <ResponseField name="criteria_results" type="array">
+      Per-criterion breakdown of pass/fail and score.
+    </ResponseField>
+    <ResponseField name="evaluated_at" type="string">
+      ISO 8601 timestamp of the evaluation run.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="has_recording" type="boolean">
+  `true` if a voice recording is available for this conversation.
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Stored metadata.
+</ResponseField>
+
+<ResponseField name="context_variables" type="object">
+  Current state of context variables at the end of the last turn.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="closed_at" type="string">
+  ISO 8601 close timestamp. `null` if still active.
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456 \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## Close a Conversation
+
+```
+POST https://api-sandbox.featherhq.com/v1/v2/conversations/{id}/close
+```
+
+Closes an active conversation. The agent's closing logic (e.g. farewell message, CRM update tool) is triggered if configured.
+
+<ParamField path="id" type="string" required>
+  Conversation ID.
+</ParamField>
+
+<ParamField body="reason" type="string">
+  Human-readable reason for closing. Stored in the conversation record.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/close \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Issue resolved - refund confirmed"}'
+```
+</CodeGroup>
+
+---
+
+## Delete a Conversation
+
+```
+DELETE https://api-sandbox.featherhq.com/v1/v2/conversations/{id}
+```
+
+Permanently deletes the conversation and all its turns. **The conversation must be closed first.**
+
+<Warning>
+  Deletion is irreversible and removes all turn data, recordings, and evaluation results. Only delete conversations you no longer need to audit.
+</Warning>
+
+<ParamField path="id" type="string" required>
+  Conversation ID. Must have `status: closed`.
+</ParamField>
+
+---
+
+## Start a Test Chat
+
+```
+POST https://api-sandbox.featherhq.com/v1/v2/conversations/test-chat
+```
+
+A convenience endpoint that mints a `test` session and is typically used from the Feather dashboard or CI pipelines to run quick agent checks.
+
+<ParamField body="agent_id" type="string">
+  ID of the agent to test. Required unless `team_id` is provided.
+</ParamField>
+
+<ParamField body="team_id" type="string">
+  ID of the team to test. Required unless `agent_id` is provided.
+</ParamField>
+
+Returns a **SessionResponse** with `session_type: test`.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/test-chat \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "asst_billing_01"}'
+```
+</CodeGroup>
+
+<Note>
+  Test conversations are excluded from production dashboards and analytics but appear in the Test Sessions view. They do not trigger live integrations (CRM writes, email sends, etc.) unless your agent is configured for it.
+</Note>

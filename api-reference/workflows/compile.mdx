@@ -1,0 +1,372 @@
+---
+title: "Compile and Validate Workflow Revisions"
+sidebarTitle: "Compile"
+description: "Trigger async workflow compilation, validate a graph without saving, cancel an in-flight compile, and fork-and-recompile published revisions."
+---
+
+Compilation converts human-readable **instructions** into an executable **graph**. It is an asynchronous operation — the API returns immediately with a `task_id` and you poll for the result.
+
+```
+Revision created → POST /compile → status: pending → poll GET /revisions/{id} → succeeded | failed
+```
+
+---
+
+## Compile a Revision
+
+```
+POST https://api-sandbox.featherhq.com/v1/workflows/revisions/{id}/compile
+```
+
+Triggers asynchronous compilation of the revision. If an identical set of instructions was compiled before, the platform may return a **cached** result instantly.
+
+<ParamField path="id" type="string" required>
+  Revision ID to compile.
+</ParamField>
+
+### Request Body
+
+<ParamField body="force" type="boolean">
+  Set to `true` to bypass the compilation cache and always recompile from scratch. Defaults to `false`.
+</ParamField>
+
+<ParamField body="compilation_strategy" type="string">
+  Override the revision's stored `compilation_strategy` for this run. One of `auto` or `manual`.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `pending` if compilation was enqueued, or `succeeded` if a cached result was returned immediately.
+</ResponseField>
+
+<ResponseField name="task_id" type="string">
+  Background task ID. Present when `status` is `pending`.
+</ResponseField>
+
+<ResponseField name="cached" type="boolean">
+  `true` if the graph was served from cache. When `true`, the `revision` field contains the fully compiled revision — no polling needed.
+</ResponseField>
+
+<ResponseField name="revision" type="object">
+  The updated revision object. Populated immediately when `cached: true`; otherwise poll [GET /workflows/revisions/{id}](/api-reference/workflows/overview#get-a-single-revision) until `compilation_status` is `succeeded` or `failed`.
+
+  <Expandable title="revision fields">
+    <ResponseField name="id" type="string">Revision ID.</ResponseField>
+    <ResponseField name="compilation_status" type="string">
+      `pending`, `succeeded`, or `failed`.
+    </ResponseField>
+    <ResponseField name="compiled_graph" type="object">
+      Populated on success.
+    </ResponseField>
+    <ResponseField name="compilation_errors" type="array">
+      Populated on failure.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  https://api-sandbox.featherhq.com/v1/workflows/revisions/wrev_abc123/compile \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"force": false}'
+```
+
+```python Python
+import httpx, time
+
+base = "https://api-sandbox.featherhq.com"
+headers = {"x-api-key": "<key>"}
+revision_id = "wrev_abc123"
+
+# Trigger compile
+r = httpx.post(
+    f"{base}/v1/workflows/revisions/{revision_id}/compile",
+    headers=headers,
+    json={"force": False},
+)
+data = r.json()
+
+if data.get("cached"):
+    print("Cached result:", data["revision"]["compilation_status"])
+else:
+    # Poll until done
+    while True:
+        time.sleep(3)
+        poll = httpx.get(
+            f"{base}/v1/workflows/revisions/{revision_id}",
+            headers=headers,
+        ).json()
+        status = poll["compilation_status"]
+        print(f"Status: {status}")
+        if status in ("succeeded", "failed"):
+            break
+    if status == "failed":
+        print("Errors:", poll["compilation_errors"])
+```
+
+```javascript JavaScript
+const base = "https://api-sandbox.featherhq.com";
+const headers = { "x-api-key": "<key>", "Content-Type": "application/json" };
+const revisionId = "wrev_abc123";
+
+const res = await fetch(
+  `${base}/v1/workflows/revisions/${revisionId}/compile`,
+  { method: "POST", headers, body: JSON.stringify({ force: false }) }
+);
+const data = await res.json();
+
+if (data.cached) {
+  console.log("Cached:", data.revision.compilation_status);
+} else {
+  // Poll
+  let status = "pending";
+  while (status === "pending") {
+    await new Promise((r) => setTimeout(r, 3000));
+    const poll = await fetch(
+      `${base}/v1/workflows/revisions/${revisionId}`,
+      { headers }
+    ).then((r) => r.json());
+    status = poll.compilation_status;
+    console.log("Status:", status);
+  }
+}
+```
+</CodeGroup>
+
+### Polling for Completion
+
+After triggering compilation, poll `GET /v1/workflows/revisions/{id}` every 2–5 seconds until `compilation_status` is no longer `pending`:
+
+| `compilation_status` | Meaning |
+|---|---|
+| `draft` | Revision has never been compiled. |
+| `pending` | Compilation task is running. |
+| `succeeded` | Graph is ready in `compiled_graph`. |
+| `failed` | Compilation failed; see `compilation_errors`. |
+
+<Tip>
+  Set a maximum poll timeout of 120 seconds. Complex workflows with many nodes may take longer; consider using `force: false` to leverage caching on re-runs.
+</Tip>
+
+---
+
+## Cancel Compilation
+
+```
+POST https://api-sandbox.featherhq.com/v1/workflows/revisions/{id}/compile/cancel
+```
+
+Attempts to cancel an in-flight compilation task. This is a **best-effort** operation — if the compilation worker has already finished, the cancel is a no-op and the revision will have `compilation_status: succeeded` or `failed`.
+
+<ParamField path="id" type="string" required>
+  Revision ID whose compilation should be cancelled.
+</ParamField>
+
+### Response
+
+<ResponseField name="cancelled" type="boolean">
+  `true` if the task was successfully cancelled before completion.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable explanation (e.g. `"Task already completed"` when cancel arrived too late).
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  https://api-sandbox.featherhq.com/v1/workflows/revisions/wrev_abc123/compile/cancel \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+<Note>
+  After a successful cancel, the revision's `compilation_status` returns to `draft`. Re-submit `POST /compile` to try again.
+</Note>
+
+---
+
+## Recompile (Fork and Force-Recompile)
+
+```
+POST https://api-sandbox.featherhq.com/v1/workflows/revisions/{id}/recompile
+```
+
+Creates a **new revision** by forking the given revision and immediately triggering a force-recompile. Use this when you want to iterate on a published (active) revision without touching the live version.
+
+<ParamField path="id" type="string" required>
+  ID of the source revision to fork and recompile.
+</ParamField>
+
+### Request Body
+
+<ParamField body="name" type="string">
+  Optional label for the new forked revision.
+</ParamField>
+
+<ParamField body="instructions" type="string">
+  Optionally override the instructions for the new revision before recompiling.
+</ParamField>
+
+### Response
+
+<ResponseField name="source_revision_id" type="string">
+  The ID of the original revision that was forked.
+</ResponseField>
+
+<ResponseField name="revision" type="object">
+  The newly created revision, with `compilation_status: pending`.
+
+  <Expandable title="revision fields">
+    <ResponseField name="id" type="string">New revision ID.</ResponseField>
+    <ResponseField name="workflow_id" type="string">Parent workflow ID.</ResponseField>
+    <ResponseField name="version" type="integer">New version number.</ResponseField>
+    <ResponseField name="compilation_status" type="string">`pending`</ResponseField>
+    <ResponseField name="task_id" type="string">Background task ID to track compilation progress.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  https://api-sandbox.featherhq.com/v1/workflows/revisions/wrev_abc123/recompile \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "v3 – improved refund logic",
+    "instructions": "1. Greet. 2. Collect account number. 3. Ask for issue type..."
+  }'
+```
+</CodeGroup>
+
+After recompile, poll the **new** revision ID for completion.
+
+---
+
+## Validate a Graph
+
+```
+POST https://api-sandbox.featherhq.com/v1/workflows/revisions/{id}/graph/validate
+```
+
+Validates a graph object against the platform's structural rules **without saving it**. Use this before calling [PUT /graph](/api-reference/workflows/overview#replace-graph-manually) to catch errors early.
+
+<ParamField path="id" type="string" required>
+  Revision ID the graph is intended for (used to check compatibility with the revision's settings).
+</ParamField>
+
+### Request Body
+
+<ParamField body="graph" type="object" required>
+  The graph object to validate.
+</ParamField>
+
+### Response
+
+<ResponseField name="valid" type="boolean">
+  `true` if the graph passed all validation checks with no errors. Warnings and suggestions may still be present.
+</ResponseField>
+
+<ResponseField name="error_count" type="integer">
+  Total number of findings with `severity: error`. A valid graph has `error_count: 0`.
+</ResponseField>
+
+<ResponseField name="findings" type="array">
+  List of **ValidationFinding** objects describing individual issues.
+
+  <Expandable title="ValidationFinding fields">
+    <ResponseField name="severity" type="string">
+      Issue severity level:
+      - `error` — Prevents the graph from running. Must be fixed before activation.
+      - `warning` — The graph will run, but behaviour may be unexpected.
+      - `suggestion` — Cosmetic or performance improvement recommendation.
+    </ResponseField>
+    <ResponseField name="rule_id" type="string">
+      Machine-readable rule identifier, e.g. `"ORPHAN_NODE"`, `"MISSING_EXIT_NODE"`, `"CYCLE_DETECTED"`.
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Human-readable description of the finding.
+    </ResponseField>
+    <ResponseField name="node_id" type="string">
+      ID of the specific graph node the finding relates to. May be `null` for graph-level findings.
+    </ResponseField>
+    <ResponseField name="suggested_fix" type="string">
+      Optional guidance on how to resolve the issue.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  https://api-sandbox.featherhq.com/v1/workflows/revisions/wrev_abc123/graph/validate \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "graph": {
+      "nodes": [
+        {"id": "start", "type": "start"},
+        {"id": "greet", "type": "message", "text": "Hello! How can I help?"},
+        {"id": "end", "type": "end"}
+      ],
+      "edges": [
+        {"from": "start", "to": "greet"},
+        {"from": "greet", "to": "end"}
+      ]
+    }
+  }'
+```
+
+```json Example response (valid)
+{
+  "valid": true,
+  "error_count": 0,
+  "findings": [
+    {
+      "severity": "suggestion",
+      "rule_id": "SINGLE_PATH_GRAPH",
+      "message": "Graph has only one path. Consider adding branches for richer flows.",
+      "node_id": null,
+      "suggested_fix": "Add a condition node after 'greet' to handle different user intents."
+    }
+  ]
+}
+```
+
+```json Example response (invalid)
+{
+  "valid": false,
+  "error_count": 2,
+  "findings": [
+    {
+      "severity": "error",
+      "rule_id": "ORPHAN_NODE",
+      "message": "Node 'collect_email' has no incoming edges.",
+      "node_id": "collect_email",
+      "suggested_fix": "Add an edge from a preceding node to 'collect_email'."
+    },
+    {
+      "severity": "error",
+      "rule_id": "MISSING_EXIT_NODE",
+      "message": "Graph has no node of type 'end'.",
+      "node_id": null,
+      "suggested_fix": "Add a node with type 'end' and connect it to the terminal step."
+    },
+    {
+      "severity": "warning",
+      "rule_id": "UNREACHABLE_BRANCH",
+      "message": "Edge from 'greet' to 'fallback' can never be reached.",
+      "node_id": "greet",
+      "suggested_fix": "Check the condition expression on this edge."
+    }
+  ]
+}
+```
+</CodeGroup>
+
+<Tip>
+  Always validate before calling `PUT /graph` or activating a manually authored revision. Fixing validation errors before saving avoids leaving the revision in a broken state.
+</Tip>

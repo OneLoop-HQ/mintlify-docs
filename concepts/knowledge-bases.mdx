@@ -1,0 +1,159 @@
+---
+title: "Knowledge Bases: Ground Agent Responses in Your Data"
+sidebarTitle: "Knowledge Bases"
+description: "Knowledge bases store and index your documents so agents can retrieve relevant content at runtime. Supports files, text, and connectors like Notion and Google Drive."
+---
+
+Knowledge bases give your agents access to your organization's content — product documentation, support articles, internal policies, FAQs, and more. At runtime, Feather performs semantic search across your indexed documents and injects the most relevant passages into the agent's context before it generates a response.
+
+## What Is a Knowledge Base?
+
+A knowledge base is a named collection of indexed documents. Each document is broken into chunks, embedded using a vector model, and stored in Feather's search index. When an agent receives a user message, it queries attached knowledge bases and retrieves the top-matching chunks to ground its response in your data rather than model hallucinations.
+
+Knowledge bases are created and managed independently of agents. You attach them to an agent revision via `knowledge_base_refs`, which means a single knowledge base can be shared across multiple agents.
+
+---
+
+## The Ingestion Pipeline
+
+When you add a document to a knowledge base, Feather runs it through an asynchronous ingestion pipeline:
+
+<Steps>
+  <Step title="Upload content">
+    Submit a file (PDF, DOCX, TXT, HTML, Markdown) via `POST /v1/knowledge-base/knowledge-bases/{kb_id}/documents/upload`, or add raw text directly via `POST /v1/knowledge-base/knowledge-bases/{kb_id}/documents/text`.
+  </Step>
+  <Step title="Processing begins">
+    Feather queues the document for processing. The document's `ingestion_status` moves to `processing`. During this phase, Feather extracts text, splits it into overlapping chunks, and normalizes the content.
+  </Step>
+  <Step title="Embedding and indexing">
+    Each chunk is passed through Feather's embedding model to produce a vector representation. Vectors are written to the index alongside the original text and metadata. `ingestion_status` moves to `completed`.
+  </Step>
+  <Step title="Available for retrieval">
+    Once indexed, the document is immediately available for semantic search. If ingestion fails, `ingestion_status` moves to `failed` and an `error_detail` field explains the cause.
+  </Step>
+</Steps>
+
+### Polling ingestion status
+
+Because ingestion is asynchronous, you should poll the status endpoint before assuming a document is ready:
+
+```bash
+GET https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases/{kb_id}/ingestion-status
+```
+
+The response includes a per-document `status` field (`queued`, `processing`, `completed`, `failed`) and an overall `ready` boolean that is `true` only when all documents in the knowledge base have completed ingestion.
+
+<Note>
+  Newly created knowledge bases with no completed documents will return no results from semantic search. Always confirm `ready: true` before attaching a knowledge base to a production agent revision.
+</Note>
+
+---
+
+## Connectors
+
+Feather supports automated syncing from external content sources via **connectors**. When you configure a connector, Feather periodically polls the source and re-ingests documents that have changed.
+
+<CardGroup cols={3}>
+  <Card title="Notion" icon="n">
+    Connect a Notion workspace and select pages or databases to sync. Feather re-indexes when page content changes.
+  </Card>
+  <Card title="Google Drive" icon="google-drive">
+    Sync files from a Google Drive folder. Supports Docs, Sheets (as text), and uploaded files.
+  </Card>
+  <Card title="Amazon S3" icon="aws">
+    Point Feather at an S3 bucket or prefix. New and updated objects are picked up on each sync cycle.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Set a `sync_schedule` on the connector (e.g. `"0 * * * *"` for hourly) to control how often Feather pulls updates. For time-sensitive content like pricing or policies, use a frequent schedule or trigger a manual sync via `POST /v1/knowledge-base/connectors/{connector_id}/sync`.
+</Tip>
+
+---
+
+## Semantic Search
+
+You can query any knowledge base directly — without going through an agent — using the search endpoint:
+
+```bash
+POST https://api-sandbox.featherhq.com/v1/knowledge-base/search
+```
+
+```json
+{
+  "kb_ids": ["kb_01abc123"],
+  "query": "What is the refund policy for annual subscriptions?",
+  "top_k": 5
+}
+```
+
+The response returns a ranked list of chunks, each with:
+
+- `chunk_id` — unique identifier for the chunk
+- `document_id` — the source document
+- `score` — cosine similarity score (0–1)
+- `text` — the raw chunk content
+- `metadata` — document title, source URL, page number, etc.
+
+This endpoint is useful for testing retrieval quality before deploying an agent, or for building custom retrieval pipelines outside of a conversation.
+
+---
+
+## Sensitivity Classification
+
+Every knowledge base has a `sensitivity` level that controls which agents (and which users) can access its content:
+
+| Level | Description |
+|---|---|
+| `public` | No restrictions. Any agent may access this knowledge base. |
+| `internal` | Accessible to agents with `internal` or higher clearance. |
+| `confidential` | Accessible to agents with `confidential` or higher clearance. |
+| `restricted` | Accessible only to agents with `restricted` clearance. |
+
+<Warning>
+  Sensitivity classification is a guardrail — it prevents agents from accidentally retrieving data above their clearance level. It is not a substitute for access controls on your underlying data systems. Always apply least-privilege principles when granting connector credentials.
+</Warning>
+
+---
+
+## Access Control Lists (ACL)
+
+Beyond sensitivity levels, you can define fine-grained ACLs on individual knowledge bases. An ACL entry specifies:
+
+- **Principal** — a user ID, agent ID, or role name
+- **Clearance level** — the maximum sensitivity the principal can access
+- **Permissions** — `read`, `write`, or `admin`
+
+ACLs let you share a single knowledge base across teams while restricting which parts of your organization can modify or re-index it.
+
+---
+
+## Attaching Knowledge Bases to Agents
+
+Knowledge bases are attached to an agent at the revision level via `knowledge_base_refs`:
+
+```json
+{
+  "knowledge_base_refs": [
+    { "kb_id": "kb_01abc123", "retrieval_top_k": 5 },
+    { "kb_id": "kb_01def456", "retrieval_top_k": 3 }
+  ]
+}
+```
+
+You can attach multiple knowledge bases to a single revision. Feather queries all attached knowledge bases in parallel and merges results, ranked by score, before injecting them into the agent's context.
+
+The optional `retrieval_top_k` field on each ref controls how many chunks are retrieved from that specific knowledge base per turn. Tune this value to balance context quality against token usage.
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Ingest Your Documents" icon="file-arrow-up" href="/guides/ingest-documents">
+    A step-by-step walkthrough of uploading files, configuring a connector, and verifying ingestion status.
+  </Card>
+  <Card title="Knowledge Base API Reference" icon="code" href="/api-reference/knowledge-base/overview">
+    Full reference for knowledge base, document, connector, and search endpoints.
+  </Card>
+</CardGroup>

@@ -1,0 +1,320 @@
+---
+title: "Conversation Turns: Send Messages and Read Transcripts"
+sidebarTitle: "Turns"
+description: "POST a user message to run a turn, GET the full transcript, or poll for new messages since a sequence number."
+---
+
+A **turn** represents a single round of interaction: a user message in → agent response out. Each turn is assigned a monotonically increasing **sequence number** (`seq`) within the conversation. Turns are the core unit for both sending messages and reading the conversation transcript.
+
+---
+
+## Send a Message (Run a Turn)
+
+```
+POST https://api-sandbox.featherhq.com/v1/v2/conversations/{id}/turns
+```
+
+Submits a user message to the conversation and runs the agent's response logic synchronously. Returns the complete turn response once the agent finishes generating.
+
+<Note>
+  For real-time streaming responses (token-by-token), use the [streaming endpoint](/api-reference/conversations/streaming) instead.
+</Note>
+
+<ParamField path="id" type="string" required>
+  Conversation ID.
+</ParamField>
+
+### Request Body
+
+<ParamField body="user_message" type="string" required>
+  The end user's message text.
+</ParamField>
+
+<ParamField body="for_update" type="boolean">
+  If `true`, the response JSON is returned but **not** persisted to the transcript. Useful for previewing the agent's response before committing. Defaults to `false`.
+</ParamField>
+
+<ParamField body="include_evidence" type="boolean">
+  If `true`, include knowledge-base retrieval evidence in the response. Defaults to `false`.
+</ParamField>
+
+<ParamField body="evidence_view" type="string">
+  Controls how evidence is structured. One of `compact` (chunk IDs + scores only) or `full` (chunk IDs, scores, and text). Requires `include_evidence: true`.
+</ParamField>
+
+### Response: TurnResponse
+
+<ResponseField name="turn_id" type="string">
+  Unique ID for this turn.
+</ResponseField>
+
+<ResponseField name="conversation_id" type="string">
+  Parent conversation ID.
+</ResponseField>
+
+<ResponseField name="text" type="string">
+  The agent's response text.
+</ResponseField>
+
+<ResponseField name="active_assistant_id" type="string">
+  The ID of the agent that generated this response. May differ from the conversation's original `assistant_id` in team swarm scenarios.
+</ResponseField>
+
+<ResponseField name="path" type="array">
+  List of workflow node IDs traversed to generate this response (in order). Empty if no workflow is active.
+</ResponseField>
+
+<ResponseField name="decision_source" type="string">
+  What drove the agent's response. One of `workflow`, `llm`, `tool`, `policy`, or `handoff`.
+</ResponseField>
+
+<ResponseField name="message_seqs" type="object">
+  Sequence numbers for the messages generated in this turn.
+
+  <Expandable title="message_seqs fields">
+    <ResponseField name="user_seq" type="integer">
+      Sequence number of the user message.
+    </ResponseField>
+    <ResponseField name="agent_seq" type="integer">
+      Sequence number of the agent response message.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="session_status" type="string">
+  Status of the conversation **after** this turn. Use this to detect if the session closed, transferred, or entered an approval hold.
+</ResponseField>
+
+<ResponseField name="turn_ttft_ms" type="integer">
+  Time-to-first-token in milliseconds. The latency from request received to first output token generated.
+</ResponseField>
+
+<ResponseField name="ended" type="boolean">
+  `true` if this turn caused the conversation to close or transfer to a human.
+</ResponseField>
+
+<ResponseField name="evidence" type="array">
+  Knowledge-base evidence used to generate the response. Only present when `include_evidence: true` was requested.
+
+  <Expandable title="evidence item fields">
+    <ResponseField name="document_id" type="string">
+      Source document ID.
+    </ResponseField>
+    <ResponseField name="chunk_id" type="string">
+      Specific chunk within the document.
+    </ResponseField>
+    <ResponseField name="score" type="number">
+      Cosine similarity score (`0`–`1`).
+    </ResponseField>
+    <ResponseField name="text" type="string">
+      Chunk text. Present in `full` evidence_view only.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/turns \
+  -H "x-api-key: <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_message": "I was charged twice last month. Can you help?",
+    "include_evidence": true,
+    "evidence_view": "compact"
+  }'
+```
+
+```python Python
+import httpx
+
+resp = httpx.post(
+    "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/turns",
+    headers={"x-api-key": "<key>"},
+    json={
+        "user_message": "I was charged twice last month. Can you help?",
+        "include_evidence": False,
+    },
+)
+turn = resp.json()
+print("Agent:", turn["text"])
+print("Status:", turn["session_status"])
+```
+
+```javascript JavaScript
+const res = await fetch(
+  "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/turns",
+  {
+    method: "POST",
+    headers: {
+      "x-api-key": "<key>",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_message: "I was charged twice last month. Can you help?",
+    }),
+  }
+);
+const turn = await res.json();
+console.log("Agent:", turn.text);
+```
+</CodeGroup>
+
+---
+
+## Get Transcript (List Turns)
+
+```
+GET https://api-sandbox.featherhq.com/v1/v2/conversations/{id}/turns
+```
+
+Returns the full conversation transcript as a cursor-paginated **TurnListResponse**.
+
+<ParamField path="id" type="string" required>
+  Conversation ID.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor. Turns are returned in ascending `seq` order by default.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Results per page. Default `50`, max `200`.
+</ParamField>
+
+<ParamField query="role" type="string">
+  Filter by message role. One of `user`, `agent`, `system`, `tool`.
+</ParamField>
+
+<ParamField query="include_compacted" type="boolean">
+  Whether to include messages that were compacted out of the active context window. Defaults to `false`.
+</ParamField>
+
+<ParamField query="include_evidence" type="boolean">
+  Whether to include knowledge-base evidence on each turn. Defaults to `false`.
+</ParamField>
+
+### TurnListResponse Fields
+
+<ResponseField name="items" type="array">
+  List of turn objects. Each item includes `turn_id`, `role`, `text`, `seq`, `created_at`, and optionally `evidence`.
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string">
+  Cursor to fetch the next page. `null` when you have reached the end.
+</ResponseField>
+
+<ResponseField name="total" type="integer">
+  Total number of turns in the conversation.
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/turns?limit=50" \
+  -H "x-api-key: <key>"
+```
+</CodeGroup>
+
+---
+
+## Poll for New Messages
+
+```
+GET https://api-sandbox.featherhq.com/v1/v2/conversations/{id}/messages?since_seq={seq}
+```
+
+A lightweight polling endpoint for **async channels** (e.g. SMS, email, or when you need to check for agent responses without holding an open HTTP connection). Returns only messages newer than the given sequence number.
+
+<ParamField path="id" type="string" required>
+  Conversation ID.
+</ParamField>
+
+<ParamField query="since_seq" type="integer" required>
+  Return messages with `seq` greater than this value. Pass `-1` on the first call to retrieve all messages from the start of the conversation.
+</ParamField>
+
+### ConversationMessagesPoll Fields
+
+<ResponseField name="session_status" type="string">
+  Current status of the conversation. Check this on every poll — if it is `closed` or `failed`, stop polling.
+</ResponseField>
+
+<ResponseField name="messages" type="array">
+  List of new messages since `since_seq`.
+
+  <Expandable title="message item fields">
+    <ResponseField name="seq" type="integer">
+      Message sequence number. Use the highest `seq` from this response as `since_seq` on the next poll.
+    </ResponseField>
+    <ResponseField name="role" type="string">
+      Message author: `user`, `agent`, `system`, or `tool`.
+    </ResponseField>
+    <ResponseField name="text" type="string">
+      Message text content.
+    </ResponseField>
+    <ResponseField name="turn_id" type="string">
+      ID of the turn this message belongs to.
+    </ResponseField>
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_seq" type="integer">
+  The sequence number to pass as `since_seq` on your next poll request. Equals the highest `seq` seen, or the current sequence cursor if no new messages were returned.
+</ResponseField>
+
+<CodeGroup>
+```bash cURL – Initial poll (get all messages)
+curl "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/messages?since_seq=-1" \
+  -H "x-api-key: <key>"
+```
+
+```bash cURL – Subsequent poll
+curl "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_xyz456/messages?since_seq=12" \
+  -H "x-api-key: <key>"
+```
+
+```python Python – poll loop
+import httpx, time
+
+conv_id = "conv_xyz456"
+headers = {"x-api-key": "<key>"}
+base = "https://api-sandbox.featherhq.com"
+since_seq = -1
+
+while True:
+    r = httpx.get(
+        f"{base}/v1/v2/conversations/{conv_id}/messages",
+        headers=headers,
+        params={"since_seq": since_seq},
+    ).json()
+
+    for msg in r["messages"]:
+        print(f"[{msg['role']}] {msg['text']}")
+
+    since_seq = r["next_seq"]
+
+    if r["session_status"] in ("closed", "failed", "expired"):
+        print("Conversation ended:", r["session_status"])
+        break
+
+    time.sleep(2)  # Poll every 2 seconds
+```
+</CodeGroup>
+
+### Polling Pattern
+
+For async channels, the recommended pattern is:
+
+1. Create a conversation (`POST /conversations`).
+2. Send the user's first message (`POST /turns`).
+3. Start polling `GET /messages?since_seq=-1` every 1–3 seconds.
+4. Advance `since_seq` to `next_seq` after each poll.
+5. Deliver new `agent` role messages to the end user.
+6. Stop polling when `session_status` is `closed`, `failed`, or `expired`.
+
+<Tip>
+  The `since_seq=-1` shorthand on first call is equivalent to `since_seq=0` but signals intent clearly. After the first successful response, always use the `next_seq` value returned — never hard-code sequence numbers.
+</Tip>
