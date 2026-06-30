@@ -30,7 +30,7 @@ When a conversation reaches an action that requires sign-off, the agent enters `
     <CodeGroup>
     ```bash cURL
     curl "https://api-sandbox.featherhq.com/v1/hitl/approvals?status=pending" \
-      -H "Authorization: Bearer <your_api_key>"
+      -H "x-api-key: <your_api_key>"
     ```
 
     ```python Python
@@ -38,7 +38,7 @@ When a conversation reaches an action that requires sign-off, the agent enters `
 
     response = requests.get(
         "https://api-sandbox.featherhq.com/v1/hitl/approvals",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         params={"status": "pending"}
     )
     print(response.json())
@@ -47,7 +47,7 @@ When a conversation reaches an action that requires sign-off, the agent enters `
     ```typescript TypeScript
     const response = await fetch(
       "https://api-sandbox.featherhq.com/v1/hitl/approvals?status=pending",
-      { headers: { Authorization: "Bearer <your_api_key>" } }
+      { headers: { "x-api-key": "<your_api_key>" } }
     );
     const data = await response.json();
     ```
@@ -61,7 +61,7 @@ When a conversation reaches an action that requires sign-off, the agent enters `
 
     ```bash
     curl "https://api-sandbox.featherhq.com/v1/hitl/approvals/<approval_id>" \
-      -H "Authorization: Bearer <your_api_key>"
+      -H "x-api-key: <your_api_key>"
     ```
 
     **ApprovalRequestDetail fields:**
@@ -85,7 +85,7 @@ When a conversation reaches an action that requires sign-off, the agent enters `
     ```bash Approve
     curl -X POST \
       "https://api-sandbox.featherhq.com/v1/hitl/approvals/<approval_id>/decide" \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{"decision": "approve"}'
     ```
@@ -93,7 +93,7 @@ When a conversation reaches an action that requires sign-off, the agent enters `
     ```bash Deny
     curl -X POST \
       "https://api-sandbox.featherhq.com/v1/hitl/approvals/<approval_id>/decide" \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "decision": "deny",
@@ -117,13 +117,13 @@ When an agent triggers a handoff, the conversation transitions to `waiting_for_h
     <CodeGroup>
     ```bash cURL
     curl "https://api-sandbox.featherhq.com/v1/hitl/handoffs?status=requested" \
-      -H "Authorization: Bearer <your_api_key>"
+      -H "x-api-key: <your_api_key>"
     ```
 
     ```python Python
     requests.get(
         "https://api-sandbox.featherhq.com/v1/hitl/handoffs",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         params={"status": "requested"}
     )
     ```
@@ -135,21 +135,24 @@ When an agent triggers a handoff, the conversation transitions to `waiting_for_h
 
     ```bash
     curl "https://api-sandbox.featherhq.com/v1/hitl/handoffs/<handoff_id>" \
-      -H "Authorization: Bearer <your_api_key>"
+      -H "x-api-key: <your_api_key>"
     ```
 
     The `packet` field contains everything the agent prepared for the handoff:
 
     ```json
     {
-      "handoff_id": "hoff_01hxd4p6ns9qr7u1bgkm",
+      "id": "hoff_01hxd4p6ns9qr7u1bgkm",
       "conversation_id": "conv_01hxd3m5mr8qp6t0zdfh",
       "status": "requested",
       "packet": {
         "static_text": "The customer is experiencing a billing discrepancy on their last invoice.",
         "reason": "Issue requires access to billing backend — outside agent permissions.",
         "summary": "Customer Alex reported a $50 overcharge on invoice #INV-2024-0891. They have already tried self-service and need manual correction.",
-        "transcript_ptr": "msg_01hxd3m5mr8qp6t0zabc"
+        "transcript_ptr": {
+          "conversation_id": "conv_01hxd3m5mr8qp6t0zdfh",
+          "up_to_seq": 12
+        }
       }
     }
     ```
@@ -159,7 +162,7 @@ When an agent triggers a handoff, the conversation transitions to `waiting_for_h
     | `static_text` | A short briefing sentence visible at the top of the handoff card. |
     | `reason` | Why the agent decided to escalate. |
     | `summary` | A longer AI-generated summary of the conversation so far. |
-    | `transcript_ptr` | Message ID pointing to where in the transcript the handoff was triggered. |
+    | `transcript_ptr` | Watermark pointer `{conversation_id, up_to_seq}` indicating the conversation message `seq` up to which the transcript had been captured at handoff time. |
   </Step>
 
   <Step title="Relay a message to the user">
@@ -169,7 +172,7 @@ When an agent triggers a handoff, the conversation transitions to `waiting_for_h
     ```bash cURL
     curl -X POST \
       "https://api-sandbox.featherhq.com/v1/hitl/handoffs/<handoff_id>/messages" \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "content": "Hi, I'\''m Sarah from support. I can see the billing issue on your account — let me get that corrected for you right now."
@@ -179,7 +182,7 @@ When an agent triggers a handoff, the conversation transitions to `waiting_for_h
     ```python Python
     requests.post(
         f"https://api-sandbox.featherhq.com/v1/hitl/handoffs/<handoff_id>/messages",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={"content": "Hi, I'm Sarah from support. I can see the billing issue on your account — let me get that corrected for you right now."}
     )
     ```
@@ -194,7 +197,7 @@ When an agent triggers a handoff, the conversation transitions to `waiting_for_h
     ```bash
     curl -X POST \
       "https://api-sandbox.featherhq.com/v1/hitl/handoffs/<handoff_id>/resolve" \
-      -H "Authorization: Bearer <your_api_key>"
+      -H "x-api-key: <your_api_key>"
     ```
   </Step>
 </Steps>
@@ -212,7 +215,7 @@ While a conversation is paused waiting for approval, the end user sees a holding
 <CodeGroup>
 ```bash cURL
 curl -X PUT https://api-sandbox.featherhq.com/v1/hitl/approval-messages \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "holding_line": "Let me connect you with a specialist. One moment please.",
@@ -223,7 +226,7 @@ curl -X PUT https://api-sandbox.featherhq.com/v1/hitl/approval-messages \
 ```python Python
 requests.put(
     "https://api-sandbox.featherhq.com/v1/hitl/approval-messages",
-    headers={"Authorization": "Bearer <your_api_key>"},
+    headers={"x-api-key": "<your_api_key>"},
     json={
         "holding_line": "Let me connect you with a specialist. One moment please.",
         "waiting_reply": "I'm still working on connecting you. Thank you for your patience."
@@ -247,33 +250,26 @@ Approval and handoff behaviors are configured as nodes in your agent's workflow 
 ```json Approval Node
 {
   "id": "approve_refund",
-  "kind": "approval",
-  "config": {
-    "subject_ref": "process_refund",
-    "approver_role": "billing_manager",
-    "suspend_message": "I'm reviewing your refund request with our billing team. This usually takes just a moment.",
-    "timeout_seconds": 300
+  "type": "approval",
+  "condition": {
+    "type": "expression",
+    "expression": "refund_amount > 100"
   },
-  "edges": {
-    "approved": "process_refund",
-    "denied": "explain_denial",
-    "timeout": "escalate_to_email"
-  }
+  "approver_role": "billing_manager",
+  "suspend_message": "I'm reviewing your refund request with our billing team. This usually takes just a moment.",
+  "timeout_seconds": 300,
+  "on_approve": "process_refund",
+  "on_deny": "explain_denial"
 }
 ```
 
 ```json Handoff Node
 {
   "id": "handoff_to_support",
-  "kind": "handoff",
-  "config": {
-    "static_text": "Transferring to a live support agent.",
-    "reason_template": "Customer issue requires manual intervention: {{last_user_message}}",
-    "include_summary": true,
-    "target_role": "support_agent"
-  }
+  "type": "handoff",
+  "static_text": "Transferring to a live support agent."
 }
 ```
 </CodeGroup>
 
-The `edges` on an Approval Node let you route the conversation differently based on whether the action was approved, denied, or timed out — giving you full control over each outcome path.
+An Approval Node's `condition` is a deterministic expression: when it evaluates to false the node is a pass-through and no approval is requested. When it's true, the runtime suspends and emits an approval request. On resume, `on_approve` and `on_deny` each name the next node to route to for that decision — a timeout is recorded as a deny, so it follows the `on_deny` path.

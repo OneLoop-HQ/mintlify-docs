@@ -1,6 +1,6 @@
 {
   "projectType": "api-service",
-  "projectName": "Feather CX Platform",
+  "projectName": "Feather",
   "projectDescription": "A unified customer experience platform API for managing AI agents, knowledge bases, conversations, voice/SMS/email channels, integrations, policies, and analytics.",
   "theme": "luma",
   "primaryColor": "#ef7025",

@@ -13,7 +13,7 @@ Before connecting, discover what's available. The `/v1/integrations` endpoint re
 <CodeGroup>
 ```bash cURL
 curl -X GET https://api-sandbox.featherhq.com/v1/integrations \
-  -H "Authorization: Bearer <your_api_key>"
+  -H "x-api-key: <your_api_key>"
 ```
 
 ```python Python
@@ -21,7 +21,7 @@ import requests
 
 response = requests.get(
     "https://api-sandbox.featherhq.com/v1/integrations",
-    headers={"Authorization": "Bearer <your_api_key>"}
+    headers={"x-api-key": "<your_api_key>"}
 )
 print(response.json())
 ```
@@ -29,7 +29,7 @@ print(response.json())
 ```typescript TypeScript
 const response = await fetch(
   "https://api-sandbox.featherhq.com/v1/integrations",
-  { headers: { Authorization: "Bearer <your_api_key>" } }
+  { headers: { "x-api-key": "<your_api_key>" } }
 );
 const data = await response.json();
 ```
@@ -38,59 +38,57 @@ const data = await response.json();
 **Example response:**
 
 ```json
-{
-  "integrations": [
-    {
-      "key": "slack",
-      "display_name": "Slack",
-      "description": "Send messages, list channels, and react to events in Slack workspaces.",
-      "category": "messaging",
-      "logo_url": "https://cdn.featherhq.com/logos/slack.svg"
-    },
-    {
-      "key": "notion",
-      "display_name": "Notion",
-      "description": "Read and write Notion pages, databases, and blocks.",
-      "category": "productivity",
-      "logo_url": "https://cdn.featherhq.com/logos/notion.svg"
-    },
-    {
-      "key": "google_drive",
-      "display_name": "Google Drive",
-      "description": "Search, read, and manage files in Google Drive.",
-      "category": "storage",
-      "logo_url": "https://cdn.featherhq.com/logos/google-drive.svg"
-    },
-    {
-      "key": "twilio",
-      "display_name": "Twilio",
-      "description": "Send SMS, make voice calls, and manage phone numbers via Twilio.",
-      "category": "communications",
-      "logo_url": "https://cdn.featherhq.com/logos/twilio.svg"
-    },
-    {
-      "key": "calcom",
-      "display_name": "Cal.com",
-      "description": "Book, reschedule, and cancel calendar appointments.",
-      "category": "scheduling",
-      "logo_url": "https://cdn.featherhq.com/logos/calcom.svg"
-    },
-    {
-      "key": "email",
-      "display_name": "Email",
-      "description": "Send and receive emails on behalf of your organization.",
-      "category": "communications",
-      "logo_url": "https://cdn.featherhq.com/logos/email.svg"
-    },
-    {
-      "key": "custom_mcp",
-      "display_name": "Custom MCP Server",
-      "description": "Connect any server that implements the Model Context Protocol.",
-      "category": "custom",
-      "logo_url": "https://cdn.featherhq.com/logos/mcp.svg"
-    }
-  ]
-}
+[
+  {
+    "key": "slack",
+    "display_name": "Slack",
+    "description": "Send messages, read channels, react to events.",
+    "category": "communication",
+    "logo_url": "https://cdn.feather.io/integrations/slack.svg"
+  },
+  {
+    "key": "notion",
+    "display_name": "Notion",
+    "description": "Search and edit pages, databases, and blocks; read comments and users.",
+    "category": "productivity",
+    "logo_url": "https://cdn.feather.io/integrations/notion.svg"
+  },
+  {
+    "key": "google_drive",
+    "display_name": "Google Drive",
+    "description": "Ingest Google Docs, Sheets, Slides, and files into a knowledge base.",
+    "category": "productivity",
+    "logo_url": "https://cdn.feather.io/integrations/google-drive.svg"
+  },
+  {
+    "key": "twilio",
+    "display_name": "Twilio",
+    "description": "Bring your own Twilio account for SMS and voice.",
+    "category": "communication",
+    "logo_url": "https://cdn.feather.io/integrations/twilio.svg"
+  },
+  {
+    "key": "calcom",
+    "display_name": "Cal.com",
+    "description": "Check availability and book, cancel, or reschedule meetings.",
+    "category": "scheduling",
+    "logo_url": "https://cdn.feather.io/integrations/calcom.svg"
+  },
+  {
+    "key": "email",
+    "display_name": "Email",
+    "description": "Send email to the customer from your connected mailbox.",
+    "category": "communication",
+    "logo_url": "https://cdn.feather.io/integrations/email.svg"
+  },
+  {
+    "key": "custom_mcp",
+    "display_name": "Custom MCP",
+    "description": "Connect any MCP server with customer-supplied auth.",
+    "category": "custom",
+    "logo_url": "https://cdn.feather.io/integrations/mcp.svg"
+  }
+]
 ```
 
 ---
@@ -106,7 +104,7 @@ Most first-party integrations use OAuth. Feather delegates the OAuth handshake t
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "integration_key": "slack",
@@ -119,7 +117,7 @@ Most first-party integrations use OAuth. Feather delegates the OAuth handshake t
 
     response = requests.post(
         "https://api-sandbox.featherhq.com/v1/integrations/connections",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={"integration_key": "slack", "nickname": "My Slack Workspace"}
     )
     print(response.json())
@@ -131,7 +129,7 @@ Most first-party integrations use OAuth. Feather delegates the OAuth handshake t
       {
         method: "POST",
         headers: {
-          Authorization: "Bearer <your_api_key>",
+          "x-api-key": "<your_api_key>",
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -177,13 +175,13 @@ Most first-party integrations use OAuth. Feather delegates the OAuth handshake t
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/finalize \
-      -H "Authorization: Bearer <your_api_key>"
+      -H "x-api-key: <your_api_key>"
     ```
 
     ```python Python
     requests.post(
         "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/finalize",
-        headers={"Authorization": "Bearer <your_api_key>"}
+        headers={"x-api-key": "<your_api_key>"}
     )
     ```
     </CodeGroup>
@@ -205,7 +203,7 @@ For MCP servers protected by a static secret:
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "nickname": "My MCP",
@@ -219,7 +217,7 @@ curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custo
 ```python Python
 requests.post(
     "https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp",
-    headers={"Authorization": "Bearer <your_api_key>"},
+    headers={"x-api-key": "<your_api_key>"},
     json={
         "nickname": "My MCP",
         "server_url": "https://mcp.example.com",
@@ -236,7 +234,7 @@ await fetch(
   {
     method: "POST",
     headers: {
-      Authorization: "Bearer <your_api_key>",
+      "x-api-key": "<your_api_key>",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -259,7 +257,7 @@ For MCP servers that use OAuth, first run discovery to retrieve the authorizatio
   <Step title="Discover OAuth config">
     ```bash
     curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp/discover \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{"server_url": "https://mcp.example.com"}'
     ```
@@ -272,7 +270,7 @@ For MCP servers that use OAuth, first run discovery to retrieve the authorizatio
 
     ```bash
     curl -X POST https://api-sandbox.featherhq.com/v1/integrations/connections/custom-mcp \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "nickname": "My MCP",
@@ -293,13 +291,13 @@ After a connection is finalized, Feather automatically syncs the available tools
 <CodeGroup>
 ```bash cURL
 curl https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt \
-  -H "Authorization: Bearer <your_api_key>"
+  -H "x-api-key: <your_api_key>"
 ```
 
 ```python Python
 requests.get(
     "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt",
-    headers={"Authorization": "Bearer <your_api_key>"}
+    headers={"x-api-key": "<your_api_key>"}
 )
 ```
 </CodeGroup>
@@ -308,7 +306,7 @@ requests.get(
 
 ```json
 {
-  "connection_id": "conn_01hx9z3p4qr7mn2k8wdt",
+  "id": "conn_01hx9z3p4qr7mn2k8wdt",
   "integration_key": "slack",
   "nickname": "My Slack Workspace",
   "status": "active",
@@ -343,12 +341,12 @@ requests.get(
 
 ### Disable or enable individual tools
 
-Prevent an agent from calling specific tools without disconnecting the entire integration:
+Prevent an agent from calling specific tools without disconnecting the entire integration. The path takes the tool's `id` (the UUID from the connection's `tools` array), not its slug:
 
 ```bash
 curl -X PATCH \
-  "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/tools/send_message" \
-  -H "Authorization: Bearer <your_api_key>" \
+  "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/tools/9f8b2c14-7d3e-4a91-b6f0-2e5c1a8d4f37" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{"is_enabled": false}'
 ```
@@ -358,7 +356,7 @@ curl -X PATCH \
 ```bash
 curl -X PATCH \
   "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/tools" \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{"is_enabled": true}'
 ```
@@ -373,7 +371,7 @@ Before attaching a tool to an agent, verify it works end-to-end using the test i
 ```bash cURL
 curl -X POST \
   "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/test-invoke" \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "slug": "send_message",
@@ -387,7 +385,7 @@ curl -X POST \
 ```python Python
 requests.post(
     "https://api-sandbox.featherhq.com/v1/integrations/connections/conn_01hx9z3p4qr7mn2k8wdt/test-invoke",
-    headers={"Authorization": "Bearer <your_api_key>"},
+    headers={"x-api-key": "<your_api_key>"},
     json={
         "slug": "send_message",
         "input": {"channel": "#general", "text": "Hello from Feather!"}
@@ -400,7 +398,7 @@ requests.post(
 
 ```json
 {
-  "raw": {
+  "result": {
     "ok": true,
     "channel": "C08ABCDEF",
     "ts": "1725200000.123456",
@@ -414,28 +412,28 @@ requests.post(
 }
 ```
 
-The `raw` field is the full vendor API response. `narrowed` is the field-map filtered result that your agent actually receives — only the fields relevant to decision-making.
+The `result` field is the full vendor API response. `narrowed` is the field-map filtered result that your agent actually receives — only the fields relevant to decision-making.
 
 ---
 
 ## Attach integration tools to an agent
 
-Reference integration tools in your agent revision's `tool_refs` array using the fully qualified slug format: `{integration_key}:{connection-nickname-slug}:{tool_slug}`.
+Reference integration tools in your agent revision's `tool_refs` array using the tool's slug. Each tool slug is built as `{nickname_slug}_{tool_slug}` — the connection nickname slugified (lowercased, non-alphanumeric runs collapsed to underscores) joined to the slugified tool path with an underscore. A connection nicknamed "My Slack Workspace" therefore produces slugs like `my_slack_workspace_send_message`.
 
 ```json
 {
   "tool_refs": [
     {
       "kind": "integration",
-      "slug": "slack:my-slack-workspace:send_message"
+      "slug": "my_slack_workspace_send_message"
     },
     {
       "kind": "integration",
-      "slug": "slack:my-slack-workspace:list_channels"
+      "slug": "my_slack_workspace_list_channels"
     },
     {
       "kind": "integration",
-      "slug": "notion:my-notion:search_pages"
+      "slug": "my_notion_search_pages"
     }
   ]
 }
