@@ -15,7 +15,7 @@ An evaluator defines a reusable quality check. Feather supports model-judge eval
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/evaluators \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Response Quality",
@@ -32,7 +32,7 @@ import requests
 
 response = requests.post(
     "https://api-sandbox.featherhq.com/v1/evaluators",
-    headers={"Authorization": "Bearer <your_api_key>"},
+    headers={"x-api-key": "<your_api_key>"},
     json={
         "name": "Response Quality",
         "kind": "model_judge",
@@ -51,7 +51,7 @@ const response = await fetch(
   {
     method: "POST",
     headers: {
-      Authorization: "Bearer <your_api_key>",
+      "x-api-key": "<your_api_key>",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -87,8 +87,8 @@ const data = await response.json();
 | Field | Description |
 |---|---|
 | `kind` | `model_judge` — uses an LLM to score the response. More types coming soon. |
-| `format` | `score` returns a float 0–1. `pass_fail` returns a boolean verdict. |
-| `severity` | `low`, `medium`, or `high`. Affects how failures surface in the dashboard. |
+| `format` | `score` returns a float 0–1. `boolean` returns a pass/fail verdict. |
+| `severity` | `info`, `low`, `medium`, `high`, or `critical`. Affects how failures surface in the dashboard. |
 | `threshold` | Minimum score to be considered passing. Only used when `format` is `score`. |
 
 ---
@@ -100,7 +100,7 @@ Bindings connect an evaluator to a specific agent. Once bound, every session for
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/evaluator-bindings \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "evaluator_id": "<eval_id>",
@@ -113,7 +113,7 @@ curl -X POST https://api-sandbox.featherhq.com/v1/evaluator-bindings \
 ```python Python
 requests.post(
     "https://api-sandbox.featherhq.com/v1/evaluator-bindings",
-    headers={"Authorization": "Bearer <your_api_key>"},
+    headers={"x-api-key": "<your_api_key>"},
     json={
         "evaluator_id": "<eval_id>",
         "scope": "agent",
@@ -128,7 +128,7 @@ requests.post(
 
 ```bash
 curl "https://api-sandbox.featherhq.com/v1/evaluator-bindings?agent_id=<agent_id>" \
-  -H "Authorization: Bearer <your_api_key>"
+  -H "x-api-key: <your_api_key>"
 ```
 
 <Tip>
@@ -148,7 +148,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/personas \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "Frustrated Customer",
@@ -159,7 +159,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     ```python Python
     persona = requests.post(
         "https://api-sandbox.featherhq.com/v1/personas",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={
             "name": "Frustrated Customer",
             "body": "You are a frustrated customer who had a bad experience. Be direct and assertive. You want a resolution quickly and will push back if the agent deflects."
@@ -175,7 +175,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/scenarios \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "Order Issue",
@@ -187,7 +187,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     ```python Python
     scenario = requests.post(
         "https://api-sandbox.featherhq.com/v1/scenarios",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={
             "name": "Order Issue",
             "intent": "Customer wants to cancel an order that has not shipped yet. They should be able to get a full refund.",
@@ -204,7 +204,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/sim-suites \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "Core Scenarios",
@@ -220,7 +220,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     ```python Python
     suite = requests.post(
         "https://api-sandbox.featherhq.com/v1/sim-suites",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={
             "name": "Core Scenarios",
             "items": [
@@ -239,7 +239,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     ```bash cURL
     curl -X POST \
       "https://api-sandbox.featherhq.com/v1/sim-suites/<suite_id>/runs" \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "agent_id": "<agent_id>",
@@ -250,7 +250,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     ```python Python
     run = requests.post(
         f"https://api-sandbox.featherhq.com/v1/sim-suites/{suite['id']}/runs",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={"agent_id": "<agent_id>", "channel": "text"}
     ).json()
     ```
@@ -258,12 +258,12 @@ Simulation suites let you run automated conversations at scale before deploying 
   </Step>
 
   <Step title="Poll for results">
-    Suite runs are asynchronous. Poll until `status` is `completed`, then review per-item scores and any failing conversations.
+    Suite runs are asynchronous. Poll until `status` is `completed`, then review the status of each child run in `runs`.
 
     <CodeGroup>
     ```bash cURL
     curl "https://api-sandbox.featherhq.com/v1/sim-suites/<suite_id>/runs/<suite_run_id>" \
-      -H "Authorization: Bearer <your_api_key>"
+      -H "x-api-key: <your_api_key>"
     ```
 
     ```python Python
@@ -272,7 +272,7 @@ Simulation suites let you run automated conversations at scale before deploying 
     while True:
         result = requests.get(
             f"https://api-sandbox.featherhq.com/v1/sim-suites/{suite['id']}/runs/{run['id']}",
-            headers={"Authorization": "Bearer <your_api_key>"}
+            headers={"x-api-key": "<your_api_key>"}
         ).json()
         if result["status"] == "completed":
             break
@@ -286,22 +286,19 @@ Simulation suites let you run automated conversations at scale before deploying 
 
     ```json
     {
-      "suite_run_id": "srun_01hxf6r8nu1st9w3dhmn",
+      "id": "srun_01hxf6r8nu1st9w3dhmn",
       "status": "completed",
-      "summary": {
-        "total": 5,
-        "passed": 4,
-        "failed": 1,
-        "pass_rate": 0.8
-      },
-      "items": [
+      "runs": [
         {
+          "id": "srn_01hxf6r8nu1st9w3dhab",
+          "session_id": "sess_01hxf6r8nu1st9w3dhcd",
           "persona_id": "<persona_id>",
           "scenario_id": "<scenario_id>",
-          "conversation_id": "conv_01hxf6r8nu1st9w3dhab",
-          "passed": true,
-          "score": 0.87,
-          "evaluator_results": [...]
+          "channel": "text",
+          "status": "completed",
+          "started_at": "2024-09-01T10:00:05Z",
+          "finished_at": "2024-09-01T10:00:42Z",
+          "created_at": "2024-09-01T10:00:00Z"
         }
       ]
     }
@@ -319,7 +316,7 @@ While simulation suites test full conversation quality, knowledge base eval suit
   <Step title="Create a KB eval suite">
     ```bash
     curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/evals/suites \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "Product FAQ Quality",
@@ -337,7 +334,7 @@ While simulation suites test full conversation quality, knowledge base eval suit
     ```bash cURL
     curl -X POST \
       "https://api-sandbox.featherhq.com/v1/knowledge-base/evals/suites/<suite_id>/cases" \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "question": "How do I reset my password?",
@@ -352,7 +349,7 @@ While simulation suites test full conversation quality, knowledge base eval suit
     ```python Python
     requests.post(
         f"https://api-sandbox.featherhq.com/v1/knowledge-base/evals/suites/{suite_id}/cases",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={
             "question": "How do I reset my password?",
             "expected_answer": "Click Forgot Password on the login screen.",
@@ -374,7 +371,7 @@ While simulation suites test full conversation quality, knowledge base eval suit
     ```bash
     curl -X POST \
       "https://api-sandbox.featherhq.com/v1/knowledge-base/evals/suites/<suite_id>/runs" \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{"kb_ids": ["<kb_id>"]}'
     ```
@@ -385,27 +382,34 @@ While simulation suites test full conversation quality, knowledge base eval suit
 
     ```bash
     curl "https://api-sandbox.featherhq.com/v1/knowledge-base/evals/runs/<run_id>/results" \
-      -H "Authorization: Bearer <your_api_key>"
+      -H "x-api-key: <your_api_key>"
     ```
 
-    **Per-case result:**
+    **Per-case results (paginated):**
 
     ```json
     {
-      "case_id": "kbcase_01hxg7s9nv2tu0x4einp",
-      "question": "How do I reset my password?",
-      "expected_answer": "Click Forgot Password on the login screen.",
-      "generated_answer": "To reset your password, click the 'Forgot Password' link on the login screen. You'll receive an email with a reset link within a few minutes.",
-      "passed": true,
-      "judge_reasoning": "The generated answer correctly identifies the login screen and the Forgot Password link, satisfying both success criteria.",
-      "retrieved_chunks": [
+      "items": [
         {
-          "chunk_id": "chunk_01hxg7s9nv2tu0x4eabc",
-          "source": "help-center/account-management.md",
-          "score": 0.94,
-          "text": "If you've forgotten your password, click 'Forgot Password' on the login screen..."
+          "id": "kbcase_01hxg7s9nv2tu0x4einp",
+          "question_snapshot": "How do I reset my password?",
+          "expected_answer_snapshot": "Click Forgot Password on the login screen.",
+          "generated_answer": "To reset your password, click the 'Forgot Password' link on the login screen. You'll receive an email with a reset link within a few minutes.",
+          "passed": true,
+          "judge_reasoning": "The generated answer correctly identifies the login screen and the Forgot Password link, satisfying both success criteria.",
+          "retrieved_chunks": [
+            {
+              "chunk_id": "chunk_01hxg7s9nv2tu0x4eabc",
+              "document_id": "doc_01hxg7s9nv2tu0x4edef",
+              "document_title": "Account Management",
+              "score": 0.94,
+              "content_preview": "If you've forgotten your password, click 'Forgot Password' on the login screen..."
+            }
+          ]
         }
-      ]
+      ],
+      "next_cursor": null,
+      "has_more": false
     }
     ```
 
@@ -421,14 +425,14 @@ While simulation suites test full conversation quality, knowledge base eval suit
   <Card
     title="Evaluators API Reference"
     icon="flask"
-    href="/api-reference/evaluators/overview"
+    href="/api-reference/evals/list-evaluators"
   >
     Full schema reference for evaluator objects, binding options, result formats, and severity levels.
   </Card>
   <Card
     title="Simulations & Scenarios"
     icon="users"
-    href="/api-reference/simulations/scenarios"
+    href="/api-reference/scenarios/list-scenarios"
   >
     API reference for personas, scenarios, sim suites, and suite run objects — including all configuration options.
   </Card>

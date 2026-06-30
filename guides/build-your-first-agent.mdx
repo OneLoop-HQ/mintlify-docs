@@ -14,7 +14,7 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/agents \
-      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "x-api-key: $FEATHER_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "Customer Support Bot",
@@ -45,7 +45,7 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/agents/agt_01hx3k2mz9vbqwerty123456/revisions \
-      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "x-api-key: $FEATHER_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "v1",
@@ -74,8 +74,8 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
           "source": "derived"
         }
       ],
-      "knowledge_base_refs": [],
-      "tool_refs": [],
+      "knowledge_base_refs": null,
+      "tool_refs": null,
       "created_at": "2024-05-14T10:23:15Z"
     }
     ```
@@ -89,7 +89,7 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/knowledge-base/knowledge-bases \
-      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "x-api-key: $FEATHER_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "Product Docs",
@@ -118,7 +118,7 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     <CodeGroup>
     ```bash cURL
     curl -X PUT https://api-sandbox.featherhq.com/v1/agents/revisions/rev_01hx3k9pq7rstuv234567890 \
-      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "x-api-key: $FEATHER_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{
         "knowledge_base_refs": [
@@ -140,7 +140,7 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/agents/agt_01hx3k2mz9vbqwerty123456/set-active-revision \
-      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "x-api-key: $FEATHER_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{
         "revision_id": "rev_01hx3k9pq7rstuv234567890"
@@ -148,16 +148,35 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     ```
     </CodeGroup>
 
+    The endpoint returns the now-active revision object:
+
     ```json
     {
-      "id": "agt_01hx3k2mz9vbqwerty123456",
-      "name": "Customer Support Bot",
-      "active_revision_id": "rev_01hx3k9pq7rstuv234567890",
+      "id": "rev_01hx3k9pq7rstuv234567890",
+      "agent_id": "agt_01hx3k2mz9vbqwerty123456",
+      "name": "v1",
+      "system_prompt": "You are a helpful customer support agent. Always be polite and concise. If you do not know the answer, say so.",
+      "context_variables": [
+        {
+          "name": "customer_name",
+          "type": "string",
+          "source": "derived"
+        }
+      ],
+      "knowledge_base_refs": [
+        {
+          "id": "kb_01hx4mno5pqrstuvwxyz0001",
+          "description": "Product documentation for answering customer questions"
+        }
+      ],
+      "tool_refs": null,
+      "policies_enabled": true,
+      "created_at": "2024-05-14T10:23:15Z",
       "updated_at": "2024-05-14T10:25:30Z"
     }
     ```
 
-    `active_revision_id` now points to `v1`. Any future revisions you create won't go live until you call this endpoint again.
+    The agent's active revision is now `v1` — a subsequent `GET /v1/agents/agt_01hx3k2mz9vbqwerty123456` would show `active_revision_id` pointing to this revision. Any future revisions you create won't go live until you call this endpoint again.
   </Step>
 
   <Step title="Test with a conversation">
@@ -168,7 +187,7 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/test-chat \
-      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "x-api-key: $FEATHER_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{
         "agent_id": "agt_01hx3k2mz9vbqwerty123456"
@@ -179,8 +198,7 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     ```json
     {
       "session_id": "sess_01hx5test9876543210abcd",
-      "session_type": "test",
-      "status": "active"
+      "end_user_id": "eu_01hx5enduser0123456789ab"
     }
     ```
 
@@ -189,7 +207,7 @@ Every Feather AI agent is made up of a few composable pieces: an **agent** recor
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/sess_01hx5test9876543210abcd/turns \
-      -H "Authorization: Bearer $FEATHER_API_KEY" \
+      -H "x-api-key: $FEATHER_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{
         "user_message": "What features do you offer?"
@@ -224,22 +242,26 @@ Tools let your agent call external APIs mid-conversation — for example, lookin
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/tools \
-  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "x-api-key: $FEATHER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "lookup_order",
     "description": "Look up the status of a customer order by order ID.",
     "configuration": {
-      "url": "https://api.yourstore.com/orders/{order_id}",
+      "url": "https://api.yourstore.com/orders/{{order_id}}",
       "method": "GET",
-      "headers": {
-        "Authorization": "Bearer {{env.STORE_API_KEY}}"
-      },
-      "path_params": [
+      "headers": [
+        {
+          "key": "Authorization",
+          "value": "Bearer sk_live_your_store_api_key",
+          "secure": true
+        }
+      ],
+      "variables": [
         {
           "name": "order_id",
           "description": "The order ID to look up",
-          "type": "string",
+          "type": "str",
           "required": true
         }
       ]
@@ -262,11 +284,12 @@ curl -X POST https://api-sandbox.featherhq.com/v1/tools \
 <CodeGroup>
 ```bash cURL
 curl -X PUT https://api-sandbox.featherhq.com/v1/agents/revisions/rev_01hx3k9pq7rstuv234567890 \
-  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "x-api-key: $FEATHER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "tool_refs": [
       {
+        "kind": "api",
         "id": "tool_01hx6orderlookup12345678"
       }
     ]
@@ -274,7 +297,7 @@ curl -X PUT https://api-sandbox.featherhq.com/v1/agents/revisions/rev_01hx3k9pq7
 ```
 </CodeGroup>
 
-The agent will now automatically invoke `lookup_order` whenever a customer asks about a specific order, passing the extracted `order_id` as a path parameter.
+The agent will now automatically invoke `lookup_order` whenever a customer asks about a specific order. It extracts the `order_id` from the conversation, and that value is substituted into the request URL via the `{{order_id}}` placeholder.
 
 <Tip>
   You can attach multiple tools and knowledge bases to a single revision. The agent decides which resources to use based on the conversation context and the descriptions you provide on each reference.

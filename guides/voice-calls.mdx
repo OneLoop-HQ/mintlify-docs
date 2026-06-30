@@ -22,7 +22,7 @@ Start by browsing available voices:
 
 ```bash
 curl https://api-sandbox.featherhq.com/v1/voice/voices \
-  -H "Authorization: Bearer <your_api_key>"
+  -H "x-api-key: <your_api_key>"
 ```
 
 This returns a list of ElevenLabs-powered voices with preview URLs so you can audition them before committing.
@@ -32,7 +32,7 @@ Once you've chosen a `voice_id`, create your pipeline config:
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/voice/configs \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "voice_id": "<voice_uuid>",
@@ -51,7 +51,7 @@ import requests
 
 response = requests.post(
     "https://api-sandbox.featherhq.com/v1/voice/configs",
-    headers={"Authorization": "Bearer <your_api_key>"},
+    headers={"x-api-key": "<your_api_key>"},
     json={
         "voice_id": "<voice_uuid>",
         "agent_id": "<agent_id>",
@@ -72,7 +72,7 @@ const response = await fetch(
   {
     method: "POST",
     headers: {
-      Authorization: "Bearer <your_api_key>",
+      "x-api-key": "<your_api_key>",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -101,12 +101,19 @@ const data = await response.json();
   "stt_provider": "deepgram",
   "interruptions_enabled": true,
   "language": "en",
-  "first_speaker": "agent",
-  "mode": "static",
-  "text": "Hello, thanks for calling. How can I help you today?",
+  "first_speaking_config": {
+    "first_speaker": "agent",
+    "mode": "static",
+    "text": "Hello, thanks for calling. How can I help you today?",
+    "instructions": null,
+    "interruptible": true,
+    "ai_disclosure_text": null
+  },
   "created_at": "2024-09-01T10:00:00Z"
 }
 ```
+
+The greeting fields you sent on the request (`first_speaker`, `mode`, `text`) are returned nested under `first_speaking_config` — they live on the agent's revision, not on the pipeline config row itself.
 
 | Field | Description |
 |---|---|
@@ -126,7 +133,7 @@ To receive inbound calls or place outbound calls from a real number, register it
     <CodeGroup>
     ```bash cURL
     curl -X POST https://api-sandbox.featherhq.com/v1/communication/phone-numbers \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "phone_e164": "+15555550100",
@@ -139,7 +146,7 @@ To receive inbound calls or place outbound calls from a real number, register it
     ```python Python
     requests.post(
         "https://api-sandbox.featherhq.com/v1/communication/phone-numbers",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={
             "phone_e164": "+15555550100",
             "vendor": "twilio",
@@ -156,9 +163,11 @@ To receive inbound calls or place outbound calls from a real number, register it
 
     ```json
     {
-      "phone_number_id": "pn_01hxc2m3nr5qp4r8xfgt",
+      "id": "pn_01hxc2m3nr5qp4r8xfgt",
+      "organization_id": "org_01hxc2m3nr5qp4r8xfgt",
       "phone_e164": "+15555550100",
       "vendor": "twilio",
+      "vendor_mode": "byo",
       "capabilities": ["voice", "sms"],
       "status": "active"
     }
@@ -172,7 +181,7 @@ To receive inbound calls or place outbound calls from a real number, register it
     ```bash cURL
     curl -X POST \
       "https://api-sandbox.featherhq.com/v1/communication/phone-numbers/pn_01hxc2m3nr5qp4r8xfgt/channels" \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{
         "channel_type": "inbound_call",
@@ -183,7 +192,7 @@ To receive inbound calls or place outbound calls from a real number, register it
     ```python Python
     requests.post(
         "https://api-sandbox.featherhq.com/v1/communication/phone-numbers/pn_01hxc2m3nr5qp4r8xfgt/channels",
-        headers={"Authorization": "Bearer <your_api_key>"},
+        headers={"x-api-key": "<your_api_key>"},
         json={"channel_type": "inbound_call", "agent_id": "<agent_id>"}
     )
     ```
@@ -202,7 +211,7 @@ Programmatically dial a customer from a registered Feather number.
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/voice/outbound \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "from_phone_number_id": "<phone_number_id>",
@@ -214,7 +223,7 @@ curl -X POST https://api-sandbox.featherhq.com/v1/voice/outbound \
 ```python Python
 requests.post(
     "https://api-sandbox.featherhq.com/v1/voice/outbound",
-    headers={"Authorization": "Bearer <your_api_key>"},
+    headers={"x-api-key": "<your_api_key>"},
     json={
         "from_phone_number_id": "<phone_number_id>",
         "to_phone_number": "+15555550123",
@@ -227,7 +236,7 @@ requests.post(
 await fetch("https://api-sandbox.featherhq.com/v1/voice/outbound", {
   method: "POST",
   headers: {
-    Authorization: "Bearer <your_api_key>",
+    "x-api-key": "<your_api_key>",
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
@@ -245,6 +254,7 @@ await fetch("https://api-sandbox.featherhq.com/v1/voice/outbound", {
 {
   "room_name": "feather-room-0hxc3n4mr7qp5s9ydfh",
   "dispatch_id": "disp_01hxc3n4mr7qp5s9ydfh",
+  "agent_name": "voice-worker-billing",
   "session_id": "sess_01hxc3p5nr8qr6t0zegj"
 }
 ```
@@ -260,7 +270,7 @@ Before going to production, test your voice agent directly in a browser without 
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/voice/web-call \
-  -H "Authorization: Bearer <your_api_key>" \
+  -H "x-api-key: <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{"agent_id": "<agent_id>"}'
 ```
@@ -268,7 +278,7 @@ curl -X POST https://api-sandbox.featherhq.com/v1/voice/web-call \
 ```python Python
 requests.post(
     "https://api-sandbox.featherhq.com/v1/voice/web-call",
-    headers={"Authorization": "Bearer <your_api_key>"},
+    headers={"x-api-key": "<your_api_key>"},
     json={"agent_id": "<agent_id>"}
 )
 ```
@@ -279,7 +289,9 @@ requests.post(
 ```json
 {
   "livekit_url": "wss://feather.livekit.cloud",
-  "access_token": "eyJhbGciOiJIUzI1NiJ9..."
+  "access_token": "eyJhbGciOiJIUzI1NiJ9...",
+  "room_name": "feather-room-0hxc3n4mr7qp5s9ydfh",
+  "session_id": "sess_01hxc3p5nr8qr6t0zegj"
 }
 ```
 
@@ -307,7 +319,7 @@ A **warm transfer** lets your AI agent put the customer on a brief hold, dial a 
 
     ```bash
     curl -X POST https://api-sandbox.featherhq.com/v1/identity/org/bridge-numbers \
-      -H "Authorization: Bearer <your_api_key>" \
+      -H "x-api-key: <your_api_key>" \
       -H "Content-Type: application/json" \
       -d '{"twilio_number_sid": "<PN...>"}'
     ```

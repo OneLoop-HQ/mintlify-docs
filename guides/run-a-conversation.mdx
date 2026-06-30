@@ -15,7 +15,7 @@ Open a new conversation session by associating an end user, a channel, and the a
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations \
-  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "x-api-key: $FEATHER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "end_user_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -41,7 +41,7 @@ curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations \
 | Field | Values | Description |
 |---|---|---|
 | `channel` | `api`, `web`, `email`, `sms` | The delivery channel for this conversation |
-| `session_type` | `live`, `test` | `live` sessions are persisted and trigger post-session processing; `test` sessions are sandboxed |
+| `session_type` | `live`, `test`, `simulation` | `live` sessions are persisted and trigger post-session processing; `test` sessions are sandboxed; `simulation` sessions back automated scenario runs |
 | `status` | `active`, `closed` | Lifecycle state of the conversation |
 
 <Tip>
@@ -57,7 +57,7 @@ For standard request/response flows, post a turn and wait for the full agent rep
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/turns \
-  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "x-api-key: $FEATHER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "user_message": "I need help with my order #12345"
@@ -68,26 +68,20 @@ curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc9
 ```json
 {
   "turn_id": "turn_01hxbcd111222333444aaaa",
+  "conversation_id": "conv_01hxabc987654321fedcba00",
   "text": "I'd be happy to help with order #12345! Let me look that up for you right now.",
   "session_status": "active",
-  "message_seqs": [2, 3],
-  "tool_calls": [
-    {
-      "tool_name": "lookup_order",
-      "input": { "order_id": "12345" },
-      "output": { "status": "shipped", "estimated_delivery": "2024-05-16" }
-    }
-  ]
+  "message_seqs": [2, 3]
 }
 ```
 
 | Field | Description |
 |---|---|
 | `turn_id` | Unique identifier for this turn |
+| `conversation_id` | The conversation this turn belongs to |
 | `text` | The agent's final reply text |
 | `session_status` | Current conversation status (`active`, `waiting_for_human`, `closed`) |
 | `message_seqs` | Sequence numbers of the messages written in this turn — use as a `since_seq` watermark |
-| `tool_calls` | Array of tool invocations made during this turn (present only if the agent called a tool) |
 
 <Note>
   If `session_status` changes to `waiting_for_human`, the agent has triggered a human handoff. No further AI replies will be generated until an operator responds or the session is returned to the bot.
@@ -102,7 +96,7 @@ For chat UIs where you want to render tokens as they arrive, use the streaming e
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/turns/stream \
-  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "x-api-key: $FEATHER_API_KEY" \
   -H "Content-Type: application/json" \
   --no-buffer \
   -d '{
@@ -116,7 +110,7 @@ const response = await fetch(
   {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${process.env.FEATHER_API_KEY}`,
+      'x-api-key': `${process.env.FEATHER_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ user_message: 'What is the status of my order?' }),
@@ -125,23 +119,36 @@ const response = await fetch(
 
 const reader = response.body.getReader();
 const decoder = new TextDecoder();
+let buffer = '';
 
 while (true) {
   const { done, value } = await reader.read();
   if (done) break;
 
-  const chunk = decoder.decode(value);
-  const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+  buffer += decoder.decode(value, { stream: true });
 
-  for (const line of lines) {
-    const payload = JSON.parse(line.slice(6)); // strip "data: "
+  // SSE frames are separated by a blank line; each frame has an
+  // `event:` line and a `data:` line.
+  let sep;
+  while ((sep = buffer.indexOf('\n\n')) !== -1) {
+    const frame = buffer.slice(0, sep);
+    buffer = buffer.slice(sep + 2);
 
-    if (payload.type === 'delta') {
+    let eventName = 'message';
+    let data = '';
+    for (const line of frame.split('\n')) {
+      if (line.startsWith('event:')) eventName = line.slice(6).trim();
+      else if (line.startsWith('data:')) data += line.slice(5).trim();
+    }
+    if (!data) continue;
+    const payload = JSON.parse(data);
+
+    if (eventName === 'delta') {
       process.stdout.write(payload.text); // stream tokens to UI
-    } else if (payload.type === 'complete') {
-      console.log('\n\nFull turn:', payload.turn); // final TurnResponse
-    } else if (payload.type === 'error') {
-      console.error('Stream error:', payload.message);
+    } else if (eventName === 'complete') {
+      console.log('\n\nFull turn:', payload); // final turn object (inline fields)
+    } else if (eventName === 'error') {
+      console.error('Stream error:', payload.error);
     }
   }
 }
@@ -151,23 +158,34 @@ while (true) {
 **Example SSE stream:**
 
 ```
-data: {"type":"delta","text":"Your order "}
-data: {"type":"delta","text":"#12345 was "}
-data: {"type":"delta","text":"shipped on May 13th "}
-data: {"type":"delta","text":"and is expected to arrive by May 16th."}
-data: {"type":"complete","turn":{"turn_id":"turn_01hxbcd111222333444bbbb","text":"Your order #12345 was shipped on May 13th and is expected to arrive by May 16th.","session_status":"active","message_seqs":[4,5]}}
+event: delta
+data: {"text":"Your order "}
+
+event: delta
+data: {"text":"#12345 was "}
+
+event: delta
+data: {"text":"shipped on May 13th "}
+
+event: delta
+data: {"text":"and is expected to arrive by May 16th."}
+
+event: complete
+data: {"turn_id":"turn_01hxbcd111222333444bbbb","conversation_id":"conv_01hxabc987654321fedcba00","text":"Your order #12345 was shipped on May 13th and is expected to arrive by May 16th.","active_assistant_id":"agt_01hx3k2mz9vbqwerty123456","path":"single","decision_source":"router","message_seqs":[4,5],"session_status":"active","turn_ttft_ms":312,"perceived_ttft_ms":340,"ended":false}
 ```
 
 **Event types:**
 
-| Event `type` | Description |
+Each frame carries a named SSE `event:` line followed by a `data:` line — branch on the event name, not on any field inside the payload.
+
+| SSE `event:` | Data payload |
 |---|---|
-| `delta` | An incremental text token to append to the UI |
-| `complete` | Final `TurnResponse` object — treat this as the source of truth for `turn_id`, `session_status`, and `tool_calls` |
-| `error` | A fatal error occurred; the stream closes immediately after this event |
+| `delta` | `{"text": "..."}` — an incremental text token to append to the UI |
+| `complete` | The final turn object with its fields inline (`turn_id`, `conversation_id`, `text`, `session_status`, `message_seqs`, …) — treat this as the source of truth |
+| `error` | `{"error": "..."}` — a fatal error occurred; the stream closes immediately after this event |
 
 <Warning>
-  Always handle the `error` event type explicitly. If the stream closes without a `complete` event, assume the turn failed and surface an appropriate message to the user.
+  Always handle the `error` event explicitly. If the stream closes without a `complete` event, assume the turn failed and surface an appropriate message to the user.
 </Warning>
 
 ---
@@ -179,7 +197,7 @@ When your agent is connected to an asynchronous channel (email, SMS, or a human 
 <CodeGroup>
 ```bash cURL
 curl "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/messages?since_seq=-1" \
-  -H "Authorization: Bearer $FEATHER_API_KEY"
+  -H "x-api-key: $FEATHER_API_KEY"
 ```
 </CodeGroup>
 
@@ -189,20 +207,24 @@ curl "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc98765432
   "next_seq": 7,
   "messages": [
     {
-      "seq": 5,
-      "role": "agent",
-      "text": "I'm connecting you with a support specialist now. Please hold on.",
+      "id": "msg_01hxbcd555666777888aaaa",
+      "role": "assistant",
+      "content": "I'm connecting you with a support specialist now. Please hold on.",
+      "authored_by": "agent",
       "created_at": "2024-05-14T12:05:00Z"
     },
     {
-      "seq": 6,
-      "role": "operator",
-      "text": "Hi, this is Jamie from support. How can I help you today?",
+      "id": "msg_01hxbcd555666777888bbbb",
+      "role": "assistant",
+      "content": "Hi, this is Jamie from support. How can I help you today?",
+      "authored_by": "human_operator",
       "created_at": "2024-05-14T12:06:45Z"
     }
   ]
 }
 ```
+
+Both AI and operator messages use `role: "assistant"`; distinguish them by `authored_by` — `"agent"` for AI-authored replies and `"human_operator"` for operator relays. The `role` enum is `user`, `assistant`, `system`, `tool`, or `system_event`.
 
 Pass `since_seq=-1` on the first request to retrieve all messages from the beginning. On subsequent polls, pass the `next_seq` value from the previous response to receive only new messages.
 
@@ -219,7 +241,7 @@ Signal that the conversation is resolved by closing the session. This triggers a
 <CodeGroup>
 ```bash cURL
 curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/close \
-  -H "Authorization: Bearer $FEATHER_API_KEY" \
+  -H "x-api-key: $FEATHER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "reason": "resolved"
@@ -230,9 +252,8 @@ curl -X POST https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc9
 ```json
 {
   "id": "conv_01hxabc987654321fedcba00",
-  "session_status": "closed",
-  "closed_at": "2024-05-14T12:15:00Z",
-  "reason": "resolved"
+  "status": "closed",
+  "closed_at": "2024-05-14T12:15:00Z"
 }
 ```
 
@@ -249,24 +270,28 @@ Fetch a paginated list of all turns in a conversation — useful for post-sessio
 <CodeGroup>
 ```bash cURL
 curl "https://api-sandbox.featherhq.com/v1/v2/conversations/conv_01hxabc987654321fedcba00/turns?limit=20" \
-  -H "Authorization: Bearer $FEATHER_API_KEY"
+  -H "x-api-key: $FEATHER_API_KEY"
 ```
 </CodeGroup>
+
+Each element of `turns` is a single message row — one per message, carrying a `role` and `content` rather than a paired user/assistant turn.
 
 ```json
 {
   "turns": [
     {
-      "turn_id": "turn_01hxbcd111222333444aaaa",
-      "user_message": "I need help with my order #12345",
-      "text": "I'd be happy to help with order #12345! Let me look that up for you right now.",
+      "id": "msg_01hxbcd111222333444aaaa",
+      "session_id": "conv_01hxabc987654321fedcba00",
+      "role": "user",
+      "content": "I need help with my order #12345",
       "created_at": "2024-05-14T12:01:00Z"
     },
     {
-      "turn_id": "turn_01hxbcd111222333444bbbb",
-      "user_message": "What is the status of my order?",
-      "text": "Your order #12345 was shipped on May 13th and is expected to arrive by May 16th.",
-      "created_at": "2024-05-14T12:03:30Z"
+      "id": "msg_01hxbcd111222333444bbbb",
+      "session_id": "conv_01hxabc987654321fedcba00",
+      "role": "assistant",
+      "content": "I'd be happy to help with order #12345! Let me look that up for you right now.",
+      "created_at": "2024-05-14T12:01:02Z"
     }
   ],
   "next_cursor": "dHVybl8wMWh4YmNkMTExMjIyMzMzNDQ0YmJiYg==",

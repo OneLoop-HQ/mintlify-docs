@@ -1,37 +1,20 @@
 ---
 title: Authenticate Requests to the Feather Platform API
 sidebarTitle: Authentication
-description: Create and manage API keys for the Feather CX Platform. Pass your key in the x-api-key header or as a Bearer token on every request.
+description: Create and manage API keys for Feather. Pass your key in the x-api-key header on every request.
 ---
 
 Feather authenticates every API request using API keys that you create and manage inside your organization. There are no session cookies or OAuth flows required — include your key on every request and Feather verifies your identity, organization membership, and permission scopes automatically.
 
-## Authentication Methods
+## Passing Your API Key
 
-Feather supports two ways to pass your key on each request. Both are accepted on every endpoint; use whichever fits your stack best.
-
-### API Key Header (Preferred)
-
-Pass the key in the `x-api-key` request header. This is the recommended approach because it is unambiguous and works seamlessly with API gateways and proxies that strip or rewrite `Authorization` headers.
+Pass your key in the `x-api-key` request header on every request. This is the only supported authentication method — Feather does not accept Bearer tokens, session cookies, or OAuth credentials.
 
 <CodeGroup>
 
 ```bash x-api-key Header
 curl https://api-sandbox.featherhq.com/v1/identity/whoami \
   -H 'x-api-key: fth_live_xxxxxxxxxxxxxxxxxxxx'
-```
-
-</CodeGroup>
-
-### Bearer Token
-
-Pass the key as a standard `Authorization: Bearer` header. Use this method when you are working with an HTTP client or framework that expects OAuth-style credentials.
-
-<CodeGroup>
-
-```bash Bearer Token
-curl https://api-sandbox.featherhq.com/v1/identity/whoami \
-  -H 'Authorization: Bearer fth_live_xxxxxxxxxxxxxxxxxxxx'
 ```
 
 </CodeGroup>
@@ -216,7 +199,7 @@ Returned when the API key is missing, malformed, revoked, or expired.
 ```json 401 Authentication Required
 {
   "error": "authentication_required",
-  "message": "No valid API key was provided. Pass your key in the x-api-key header or as a Bearer token."
+  "message": "No valid API key was provided. Pass your key in the x-api-key header."
 }
 ```
 

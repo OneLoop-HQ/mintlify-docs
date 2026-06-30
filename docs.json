@@ -1,13 +1,23 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "luma",
-  "name": "Feather CX Platform",
+  "theme": "maple",
+  "name": "Feather",
   "colors": {
-    "primary": "#ef7025",
-    "light": "#eec9bc",
-    "dark": "#4fa1ab"
+    "primary": "#0A0A0A",
+    "light": "#FFFFFF",
+    "dark": "#0A0A0A"
   },
-  "favicon": "/favicon.svg",
+  "appearance": {
+    "default": "system"
+  },
+  "background": {
+    "decoration": "gradient"
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs",
+    "codeblocks": "dark"
+  },
+  "favicon": "/favicon.png",
   "navigation": {
     "tabs": [
       {
@@ -47,111 +57,7 @@
       },
       {
         "tab": "API Reference",
-        "groups": [
-          {
-            "group": "Identity & Auth",
-            "pages": [
-              "api-reference/identity/whoami",
-              "api-reference/identity/organization",
-              "api-reference/identity/end-users",
-              "api-reference/identity/api-keys",
-              "api-reference/identity/members"
-            ]
-          },
-          {
-            "group": "Agents & Workflows",
-            "pages": [
-              "api-reference/agents/overview",
-              "api-reference/agents/revisions",
-              "api-reference/agents/workflows",
-              "api-reference/agents/policies",
-              "api-reference/teams",
-              "api-reference/workflows/overview",
-              "api-reference/workflows/compile",
-              "api-reference/personas"
-            ]
-          },
-          {
-            "group": "Conversations & Runtime",
-            "pages": [
-              "api-reference/conversations/overview",
-              "api-reference/conversations/turns",
-              "api-reference/conversations/streaming",
-              "api-reference/hitl/approvals",
-              "api-reference/hitl/handoffs"
-            ]
-          },
-          {
-            "group": "Knowledge Base",
-            "pages": [
-              "api-reference/knowledge-base/overview",
-              "api-reference/knowledge-base/ingest",
-              "api-reference/knowledge-base/search",
-              "api-reference/knowledge-base/connectors",
-              "api-reference/knowledge-base/classification",
-              "api-reference/knowledge-base/evals"
-            ]
-          },
-          {
-            "group": "Tools & Integrations",
-            "pages": [
-              "api-reference/tools/overview",
-              "api-reference/tools/execute",
-              "api-reference/integrations/connections",
-              "api-reference/integrations/mcp",
-              "api-reference/mocks"
-            ]
-          },
-          {
-            "group": "Communications",
-            "pages": [
-              "api-reference/voice/overview",
-              "api-reference/voice/calls",
-              "api-reference/sms",
-              "api-reference/email/mailboxes",
-              "api-reference/email/drafts",
-              "api-reference/phone-numbers"
-            ]
-          },
-          {
-            "group": "Policies & Privacy",
-            "pages": [
-              "api-reference/policies/overview",
-              "api-reference/policies/revisions",
-              "api-reference/policies/enforcement",
-              "api-reference/privacy",
-              "api-reference/retention-policies"
-            ]
-          },
-          {
-            "group": "Analytics",
-            "pages": [
-              "api-reference/analytics/sessions",
-              "api-reference/analytics/tools",
-              "api-reference/analytics/knowledge",
-              "api-reference/analytics/integrations",
-              "api-reference/analytics/knowledge-gaps"
-            ]
-          },
-          {
-            "group": "Testing & Evals",
-            "pages": [
-              "api-reference/evaluators/overview",
-              "api-reference/evaluators/bindings",
-              "api-reference/simulations/scenarios",
-              "api-reference/simulations/suites",
-              "api-reference/simulations/runs"
-            ]
-          },
-          {
-            "group": "Platform",
-            "pages": [
-              "api-reference/model-router",
-              "api-reference/webhooks",
-              "api-reference/notifications"
-            ]
-          }
-        ]
+        "openapi": "/api-reference/openapi.json"
       }
     ]
   },
